@@ -9,7 +9,8 @@ const char* USER = "qtuser";
 const char* PASS = "QtPassw0rd!";
 const char* DB_NAME = "dongRuanSystem";
 const unsigned int PORT = 3306; 
-bool authenticateUser(const std::string& username, const std::string& password) {
+
+AuthResult authenticateUser(const std::string& username, const std::string& password) {
     MYSQL* conn = mysql_init(nullptr);
     bool authSuccess = false;
 
