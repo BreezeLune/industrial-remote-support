@@ -9,6 +9,14 @@ CREATE TABLE users{
     role ENUM('admin', 'factory', 'expert', 'auditor') NOT NULL
 };
 
+CREATE TABLE user_tokens (
+    token VARCHAR(64) PRIMARY KEY,
+    user_id INT NOT NULL,
+    role ENUM('admin', 'factory', 'expert', 'auditor') NOT NULL,
+    expire_time DATETIME NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 INSERT INTO users(username, password,role) 
 VALUES
     ('factory1', 'woxihuanxian123', 'factory'),
