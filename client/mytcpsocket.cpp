@@ -224,9 +224,32 @@ void MyTcpSocket::recvFromSocket()
     else
     {
         quint32 data_size;
-        qFromBigEndian<quint32>(recvbuf + 7, 4, &data_size);
+        // 修复：CREATE_MEETING_RESPONSE跳过IP字段，size字段位置不同
+        MSG_TYPE msgtype;
+        uint16_t type;
+        qFromBigEndian<uint16_t>(recvbuf + 1, 2, &type);
+        msgtype = (MSG_TYPE)type;
+        
+        if (msgtype == CREATE_MEETING_RESPONSE || msgtype == PARTNER_JOIN2)
+        {
+            // 这些消息跳过IP字段，size字段在位置7（msgType 2字节 + 4字节填充）
+            qFromBigEndian<quint32>(recvbuf + 7, 4, &data_size);
+        }
+        else
+        {
+            // 其他消息有IP字段，size字段在位置7
+            qFromBigEndian<quint32>(recvbuf + 7, 4, &data_size);
+        }
+        
+        qDebug() << "=== 消息解析 ===";
+        qDebug() << "消息类型:" << msgtype;
+        qDebug() << "数据长度:" << data_size;
+        qDebug() << "已接收字节:" << hasrecvive;
+        qDebug() << "需要字节:" << (quint64)data_size + 1 + MSG_HEADER;
+        
         if ((quint64)data_size + 1 + MSG_HEADER <= hasrecvive) //收够一个包
         {
+            qDebug() << "数据包完整，检查格式...";
             if (recvbuf[0] == '$' && recvbuf[MSG_HEADER + data_size] == '#') //且包结构正确
             {
 				MSG_TYPE msgtype;
@@ -238,8 +261,21 @@ void MyTcpSocket::recvFromSocket()
 				{
 					if (msgtype == CREATE_MEETING_RESPONSE)
 					{
+						qDebug() << "=== 收到CREATE_MEETING_RESPONSE ===";
+						qDebug() << "数据长度:" << data_size;
+						
+						// 打印原始数据
+						qDebug() << "原始数据:";
+						for(quint32 i = 0; i < data_size; i++) {
+							printf("%02X ", recvbuf[MSG_HEADER + i]);
+						}
+						printf("\n");
+						
 						qint32 roomNo;
+						// 修复：CREATE_MEETING_RESPONSE跳过IP字段，数据从MSG_HEADER开始
+						// MSG_HEADER = 11，但CREATE_MEETING_RESPONSE的数据从位置11开始
 						qFromBigEndian<qint32>(recvbuf + MSG_HEADER, 4, &roomNo);
+						qDebug() << "解析的房间号:" << roomNo;
 
 						MESG* msg = (MESG*)malloc(sizeof(MESG));
 
@@ -251,7 +287,8 @@ void MyTcpSocket::recvFromSocket()
 						{
 							memset(msg, 0, sizeof(MESG));
 							msg->msg_type = msgtype;
-							msg->data = (uchar*)malloc((quint64)data_size);
+							// 修复：使用固定的4字节长度，而不是data_size
+							msg->data = (uchar*)malloc(4);
 							if (msg->data == NULL)
 							{
 								free(msg);
@@ -259,9 +296,10 @@ void MyTcpSocket::recvFromSocket()
 							}
 							else
 							{
-								memset(msg->data, 0, (quint64)data_size);
-								memcpy(msg->data, &roomNo, data_size);
-								msg->len = data_size;
+								memset(msg->data, 0, 4);
+								memcpy(msg->data, &roomNo, 4);
+								msg->len = 4;  // 修复：设置为4字节
+								qDebug() << "将房间号" << roomNo << "加入接收队列，数据长度:" << msg->len;
 								queue_recv.push_msg(msg);
 							}
 
@@ -321,7 +359,7 @@ void MyTcpSocket::recvFromSocket()
 								memset(msg->data, 0, data_size);
 								uint32_t ip;
 								int pos = 0;
-								for (int i = 0; i < data_size / sizeof(uint32_t); i++)
+								for (quint32 i = 0; i < data_size / sizeof(uint32_t); i++)
 								{
 									qFromBigEndian<uint32_t>(recvbuf + MSG_HEADER + pos, sizeof(uint32_t), &ip);
 									memcpy_s(msg->data + pos, data_size - pos, &ip, sizeof(uint32_t));
@@ -466,6 +504,11 @@ void MyTcpSocket::recvFromSocket()
             else
             {
                 qDebug() << "package error";
+                qDebug() << "包结构检查失败:";
+                qDebug() << "开头字符:" << (char)recvbuf[0];
+                qDebug() << "结尾字符:" << (char)recvbuf[MSG_HEADER + data_size];
+                qDebug() << "期望开头: $";
+                qDebug() << "期望结尾: #";
             }
 			memmove_s(recvbuf, 4 * MB, recvbuf + MSG_HEADER + data_size + 1, hasrecvive - ((quint64)data_size + 1 + MSG_HEADER));
 			hasrecvive -= ((quint64)data_size + 1 + MSG_HEADER);
