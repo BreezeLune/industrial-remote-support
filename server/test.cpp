@@ -1,6 +1,7 @@
 #include "auth.h"
 #include <iostream>
 
+
 int main() {
     std::string username, password, token;
 
@@ -34,3 +35,4 @@ int main() {
     } else {
         std::cout << "Token invalid. Error: " << tokenRes.error << "\n";
     }
+}

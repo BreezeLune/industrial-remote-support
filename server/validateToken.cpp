@@ -4,6 +4,13 @@
 #include <cstring>
 #include <ctime>
 
+// Database config
+const char* HOST = "39.106.12.91";
+const char* USER = "qtuser";
+const char* PASS = "QtPassw0rd!";
+const char* DB_NAME = "dongRuanSystem";
+const unsigned int PORT = 3306;
+
 AuthResult validateToken(const std::string& token) {
     AuthResult result;
     result.ok = false;
