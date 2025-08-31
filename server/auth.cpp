@@ -5,15 +5,16 @@
 #include <random>
 #include <sstream>
 #include <ctime>
+#include <openssl/sha.h>
 
-// Database config
+
 const char* HOST = "39.106.12.91";
 const char* USER = "qtuser";
 const char* PASS = "QtPassw0rd!";
 const char* DB_NAME = "dongRuanSystem";
 const unsigned int PORT = 3306;
 
-// Generate a random token (32 hex chars)
+
 std::string generateToken() {
     std::random_device rd;
     std::uniform_int_distribution<int> dist(0, 15);
@@ -60,12 +61,14 @@ AuthResult validateToken(const std::string& token) {
         }
 
         MYSQL_BIND bind[1];
+            mysql_close(conn);
         memset(bind, 0, sizeof(bind));
         bind[0].buffer_type = MYSQL_TYPE_STRING;
         bind[0].buffer = (char*)token.c_str();
         bind[0].buffer_length = token.length();
 
         if (mysql_stmt_bind_param(stmt, bind) != 0) {
+            mysql_close(conn);
             result.error = "DB_ERROR";
             mysql_stmt_close(stmt);
             mysql_close(conn);
