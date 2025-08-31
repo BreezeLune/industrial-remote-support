@@ -1,0 +1,12 @@
+..\..\widget.cpp:Widget::39>>>-------------------------Application Start---------------------------
+..\..\widget.cpp:Widget::40>>>main UI thread id: 0x000000000000353C
+..\..\sendimg.cpp:run::17>>>start sending picture thread: 0x00000000000084A8
+..\..\sendtext.cpp:run::35>>>start sending text thread: 0x0000000000004B54
+..\..\recvsolve.cpp:run::21>>>start solving data thread: 0x0000000000007BF8
+..\..\AudioOutput.cpp:run::111>>>start playing audio thread 0x00000000000082E0
+..\..\widget.cpp:on_connServer_clicked::403>>>succeeed connecting to 39.106.12.91:8080
+..\..\recvsolve.cpp:run::28>>>stop solving data thread: 0x0000000000007BF8
+..\..\sendimg.cpp:run::33>>>stop sending picture thread: 0x00000000000084A8
+..\..\sendtext.cpp:run::48>>>stop sending text thread: 0x0000000000004B54
+..\..\AudioOutput.cpp:run::119>>>stop playing audio thread 0x00000000000082E0
+..\..\widget.cpp:~Widget::232>>>-------------------Application End-----------------

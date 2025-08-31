@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "cstring": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "Makefile": "makefile",
+        "makefile": "makefile"
     }
 }
