@@ -6,6 +6,8 @@
 #include <sstream>
 #include <ctime>
 #include <openssl/sha.h>
+#include <iomanip>
+
 
 
 const char* HOST = "39.106.12.91";
@@ -14,6 +16,19 @@ const char* PASS = "QtPassw0rd!";
 const char* DB_NAME = "dongRuanSystem";
 const unsigned int PORT = 3306;
 
+std::string hashPassword(const std::string& password) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256((const unsigned char*)password.c_str(), password.size(), hash);
+    std::stringstream ss;
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
+    return ss.str();
+}    // 生成盐并哈希
+
+
+bool checkPassword(const std::string& password, const std::string& hash) {
+    return hashPassword(password) == hash;
+}
 
 std::string generateToken() {
     std::random_device rd;
@@ -23,6 +38,83 @@ std::string generateToken() {
         ss << std::hex << dist(rd);
     }
     return ss.str();
+}
+
+
+bool isUsernameExists(const std::string& username) {
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) {
+        return false; // 数据库初始化失败，按接口规范返回 false
+    }
+    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
+        mysql_close(conn);
+        return false; // 数据库连接失败，按接口规范返回 false
+    }
+
+    bool exists = false;
+    try {
+        MYSQL_STMT* stmt = mysql_stmt_init(conn);
+        if (!stmt) {
+            mysql_close(conn);
+            return false;
+        }
+
+        const char* query = "SELECT id FROM users WHERE username = ? LIMIT 1";
+        if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+
+        MYSQL_BIND bind[1];
+        memset(bind, 0, sizeof(bind));
+        bind[0].buffer_type = MYSQL_TYPE_STRING;
+        bind[0].buffer = (char*)username.c_str();
+        bind[0].buffer_length = username.length();
+
+        if (mysql_stmt_bind_param(stmt, bind) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+
+        if (mysql_stmt_execute(stmt) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+
+        int userId = -1;
+        MYSQL_BIND resultBind[1];
+        memset(resultBind, 0, sizeof(resultBind));
+        resultBind[0].buffer_type = MYSQL_TYPE_LONG;
+        resultBind[0].buffer = (char*)&userId;
+
+        if (mysql_stmt_bind_result(stmt, resultBind) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+
+        if (mysql_stmt_store_result(stmt) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+
+        if (mysql_stmt_fetch(stmt) == 0) {
+            exists = true; // 查到数据，用户名已存在
+        }
+
+        mysql_stmt_free_result(stmt);
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return exists;
+    }
+    catch (...) {
+        mysql_close(conn);
+        return false;
+    }
 }
 
 AuthResult validateToken(const std::string& token) {
@@ -161,6 +253,117 @@ AuthResult validateToken(const std::string& token) {
     }
 }
 
+AuthResult registerUser(const std::string& username, const std::string& password, const std::string& email, const std::string& company, const std::string& requestedRole) {
+    AuthResult result;
+    result.ok = false;
+    result.userId = -1;
+    result.role = "";
+    result.token = "";
+    result.error = "";
+    result.approved = false;
+    result.status = "pending";
+
+    // 1. 检查用户名是否已存在
+    if (isUsernameExists(username)) {
+        result.error = "USERNAME_EXISTS";
+        return result;
+    }
+
+    // 2. 校验角色是否合法
+    if (requestedRole != "admin" && requestedRole != "factory" && requestedRole != "expert" && requestedRole != "auditor") {
+        result.error = "INVALID_ROLE";
+        return result;
+    }
+
+    // 3. 数据库连接
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) {
+        result.error = "DB_ERROR";
+        return result;
+    }
+    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
+        mysql_close(conn);
+        result.error = "DB_ERROR";
+        return result;
+    }
+
+    try {
+        // 4. 密码加密
+        std::string hashedPwd = hashPassword(password);
+
+        // 5. 插入用户
+        MYSQL_STMT* stmt = mysql_stmt_init(conn);
+        if (!stmt) {
+            result.error = "DB_ERROR";
+            mysql_close(conn);
+            return result;
+        }
+
+        const char* query = "INSERT INTO users (username, password, role, email, company, approved, status) VALUES (?, ?, ?, ?, ?, false, 'pending')";
+        if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
+            result.error = "DB_ERROR";
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return result;
+        }
+
+        MYSQL_BIND bind[5];
+        memset(bind, 0, sizeof(bind));
+        // username
+        bind[0].buffer_type = MYSQL_TYPE_STRING;
+        bind[0].buffer = (char*)username.c_str();
+        bind[0].buffer_length = username.length();
+        // password
+        bind[1].buffer_type = MYSQL_TYPE_STRING;
+        bind[1].buffer = (char*)hashedPwd.c_str();
+        bind[1].buffer_length = hashedPwd.length();
+        // role
+        bind[2].buffer_type = MYSQL_TYPE_STRING;
+        bind[2].buffer = (char*)requestedRole.c_str();
+        bind[2].buffer_length = requestedRole.length();
+        // email
+        bind[3].buffer_type = MYSQL_TYPE_STRING;
+        bind[3].buffer = (char*)email.c_str();
+        bind[3].buffer_length = email.length();
+        // company
+        bind[4].buffer_type = MYSQL_TYPE_STRING;
+        bind[4].buffer = (char*)company.c_str();
+        bind[4].buffer_length = company.length();
+
+        if (mysql_stmt_bind_param(stmt, bind) != 0) {
+            result.error = "DB_ERROR";
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return result;
+        }
+
+        if (mysql_stmt_execute(stmt) != 0) {
+            result.error = "DB_ERROR";
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return result;
+        }
+
+        // 6. 获取新用户ID
+        int userId = (int)mysql_insert_id(conn);
+
+        result.ok = true;
+        result.userId = userId;
+        result.role = requestedRole;
+        result.approved = false;
+        result.status = "pending";
+
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return result;
+    }
+    catch (...) {
+        result.error = "DB_ERROR";
+        mysql_close(conn);
+        return result;
+    }
+}
+
 AuthResult authenticateUser(const std::string& username, const std::string& password) {
     
     AuthResult result;
@@ -269,7 +472,7 @@ AuthResult authenticateUser(const std::string& username, const std::string& pass
 
         // Check password
         std::string dbPwdStr(dbPassword, pwdLen);
-        if (password != dbPwdStr) {
+        if (!checkPassword(password, dbPwdStr)) {
             result.error = "BAD_PASSWORD";
             mysql_stmt_free_result(stmt);
             mysql_stmt_close(stmt);
