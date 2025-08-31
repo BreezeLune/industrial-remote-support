@@ -5,7 +5,7 @@
 #include <random>
 #include <sstream>
 #include <ctime>
-#include <bcrypt/BCrypt.hpp>
+#include <openssl/sha.h>
 
 
 const char* HOST = "39.106.12.91";
@@ -15,13 +15,17 @@ const char* DB_NAME = "dongRuanSystem";
 const unsigned int PORT = 3306;
 
 std::string hashPassword(const std::string& password) {
-    // 生成盐并哈希
-    return BCrypt::generateHash(password);
-}
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256((const unsigned char*)password.c_str(), password.size(), hash);
+    std::stringstream ss;
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
+    return ss.str();
+}    // 生成盐并哈希
+
 
 bool checkPassword(const std::string& password, const std::string& hash) {
-    // 校验密码
-    return BCrypt::validatePassword(password, hash);
+    return hashPassword(password) == hash;
 }
 
 std::string generateToken() {
