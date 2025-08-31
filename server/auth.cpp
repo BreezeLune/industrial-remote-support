@@ -6,6 +6,8 @@
 #include <sstream>
 #include <ctime>
 #include <openssl/sha.h>
+#include <iomanip>
+
 
 
 const char* HOST = "39.106.12.91";
