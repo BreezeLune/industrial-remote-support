@@ -3,7 +3,7 @@
 本项目需要两个主要依赖：
 
 - MySQL C++ 连接库（`#include <mysql/mysql.h>`）
-- bcrypt 密码哈希库（`#include <bcrypt/BCrypt.hpp>`）
+- 密码哈希库（`#include <openssl/sha.h>`）
 
 ---
 
@@ -21,11 +21,6 @@ sudo apt-get install libmysqlclient-dev
 推荐使用 [bcrypt-cpp](https://github.com/niXman/bcrypt-cpp)：
 
 ```bash
-git clone https://github.com/niXman/bcrypt-cpp.git
-cd bcrypt-cpp
-mkdir build && cd build
-cmake ..
-make
-sudo make install
+sudo apt install libssl-dev
 ```
 

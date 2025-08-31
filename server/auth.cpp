@@ -131,8 +131,8 @@ AuthResult validateToken(const std::string& token) {
         return result;
     }
     if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
-        mysql_close(conn);
         result.error = "DB_ERROR";
+        mysql_close(conn);
         return result;
     }
 
@@ -153,14 +153,12 @@ AuthResult validateToken(const std::string& token) {
         }
 
         MYSQL_BIND bind[1];
-            mysql_close(conn);
         memset(bind, 0, sizeof(bind));
         bind[0].buffer_type = MYSQL_TYPE_STRING;
         bind[0].buffer = (char*)token.c_str();
         bind[0].buffer_length = token.length();
 
         if (mysql_stmt_bind_param(stmt, bind) != 0) {
-            mysql_close(conn);
             result.error = "DB_ERROR";
             mysql_stmt_close(stmt);
             mysql_close(conn);
@@ -182,13 +180,14 @@ AuthResult validateToken(const std::string& token) {
         MYSQL_BIND resultBind[3];
         memset(resultBind, 0, sizeof(resultBind));
         resultBind[0].buffer_type = MYSQL_TYPE_LONG;
-        resultBind[0].buffer = (char*)&userId;
+        resultBind[0].buffer = (void*)&userId;
+        resultBind[0].is_unsigned = 0;
         resultBind[1].buffer_type = MYSQL_TYPE_STRING;
-        resultBind[1].buffer = (char*)role;
+        resultBind[1].buffer = (void*)role;
         resultBind[1].buffer_length = sizeof(role);
         resultBind[1].length = &roleLen;
         resultBind[2].buffer_type = MYSQL_TYPE_STRING;
-        resultBind[2].buffer = (char*)expireTimeStr;
+        resultBind[2].buffer = (void*)expireTimeStr;
         resultBind[2].buffer_length = sizeof(expireTimeStr);
         resultBind[2].length = &expireLen;
 
@@ -221,9 +220,23 @@ AuthResult validateToken(const std::string& token) {
             return result;
         }
 
-        // Check expiration
+        // 检查 expireTimeStr 是否有效
+        if (expireLen == 0 || expireTimeStr[0] == '\0') {
+            result.error = "TOKEN_INVALID";
+            mysql_stmt_free_result(stmt);
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return result;
+        }
+
         struct tm tm_expire = {0};
-        strptime(expireTimeStr, "%Y-%m-%d %H:%M:%S", &tm_expire);
+        if (!strptime(expireTimeStr, "%Y-%m-%d %H:%M:%S", &tm_expire)) {
+            result.error = "TOKEN_INVALID";
+            mysql_stmt_free_result(stmt);
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return result;
+        }
         time_t expireTime = mktime(&tm_expire);
         time_t now = time(nullptr);
 
