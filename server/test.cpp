@@ -1,5 +1,6 @@
 #include "auth.h"
 #include <iostream>
+#include <vector>
 
 int main() {
     std::string username, password, email, company, role, token;
@@ -29,7 +30,7 @@ int main() {
     AuthResult regRes = registerUser(username, password, email, company, role);
     if (regRes.ok) {
         std::cout << "注册成功！userId: " << regRes.userId << ", role: " << regRes.role
-                  << ", approved: " << regRes.approved << ", status: " << regRes.status << "\n";
+                  << ", status: " << regRes.status << "\n";
     } else {
         std::cout << "注册失败，错误码: " << regRes.error << "\n";
     }
@@ -60,5 +61,23 @@ int main() {
         std::cout << "Token 无效，错误码: " << tokenRes.error << "\n";
     }
 
-    return 0;
+   approveUser(1,1);
+    rejectUser(2,2);
+    // 新增：测试 getPendingUser
+    std::cout << "\n待审核用户列表:\n";
+    std::vector<UserInfo> pendingUsers = getPendingUser();
+    for (const auto& user : pendingUsers) {
+        std::cout << "ID: " << user.id << ", 用户名: " << user.username
+                  << ", 邮箱: " << user.email << ", 公司: " << user.company
+                  << ", 角色: " << user.role << ", 状态: " << user.status << "\n";
+    }
+
+    // 新增：测试 getAllUsers
+    std::cout << "\n所有用户列表:\n";
+    std::vector<UserInfo> allUsers = getAllUsers();
+    for (const auto& user : allUsers) {
+        std::cout << "ID: " << user.id << ", 用户名: " << user.username
+                  << ", 邮箱: " << user.email << ", 公司: " << user.company
+                  << ", 角色: " << user.role << ", 状态: " << user.status << "\n";
+    }
 }
