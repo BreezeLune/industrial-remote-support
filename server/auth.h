@@ -4,6 +4,7 @@
 #include <string>
 #include "AuthResult.h"
 #include "UserInfo.h"
+#include <vector>
 
 AuthResult authenticateUser(const std::string& username, const std::string& password);
 AuthResult validateToken(const std::string& token);

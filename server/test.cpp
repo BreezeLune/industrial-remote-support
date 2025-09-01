@@ -1,5 +1,6 @@
 #include "auth.h"
 #include <iostream>
+#include <vector>
 
 int main() {
     std::string username, password, email, company, role, token;
@@ -60,6 +61,8 @@ int main() {
         std::cout << "Token 无效，错误码: " << tokenRes.error << "\n";
     }
 
+   approveUser(1,1);
+    rejectUser(2,2);
     // 新增：测试 getPendingUser
     std::cout << "\n待审核用户列表:\n";
     std::vector<UserInfo> pendingUsers = getPendingUser();
@@ -77,5 +80,4 @@ int main() {
                   << ", 邮箱: " << user.email << ", 公司: " << user.company
                   << ", 角色: " << user.role << ", 状态: " << user.status << "\n";
     }
-
-    return
+}

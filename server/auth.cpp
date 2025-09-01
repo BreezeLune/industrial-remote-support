@@ -7,6 +7,7 @@
 #include <ctime>
 #include <openssl/sha.h>
 #include <iomanip>
+#include <vector>
 
 
 
@@ -362,7 +363,6 @@ AuthResult registerUser(const std::string& username, const std::string& password
         result.ok = true;
         result.userId = userId;
         result.role = requestedRole;
-        result.approved = false;
         result.status = "pending";
 
         mysql_stmt_close(stmt);
@@ -435,7 +435,7 @@ bool rejectUser(int userId, int adminId) {
     }
 }
 
-bool rejectUser(int userId, int adminId) {
+bool approveUser(int userId, int adminId) {
     // 1. 初始化数据库连接
     MYSQL* conn = mysql_init(nullptr); // 创建一个 MYSQL 连接对象
     if (!conn) {
