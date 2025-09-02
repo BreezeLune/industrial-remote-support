@@ -9,7 +9,6 @@ CREATE TABLE users (
     role ENUM('admin', 'factory', 'expert', 'auditor') NOT NULL,
     email VARCHAR(100),
     company VARCHAR(100),
-    approved BOOLEAN DEFAULT FALSE,
     status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
     reviewed_by INT, 
     FOREIGN KEY (reviewed_by) REFERENCES users(id)

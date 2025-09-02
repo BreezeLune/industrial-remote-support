@@ -6,6 +6,5 @@ struct AuthResult {
     std::string role;
     std::string token;
     std::string error;
-    std::string approved;
     std::string status;
 };
