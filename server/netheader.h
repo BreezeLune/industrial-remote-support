@@ -3,7 +3,8 @@
 
 enum MSG_TYPE
 {
-    IMG_SEND = 0,
+
+   IMG_SEND = 0,
     IMG_RECV,
     AUDIO_SEND,
     AUDIO_RECV,
@@ -12,14 +13,33 @@ enum MSG_TYPE
     CREATE_MEETING,
     EXIT_MEETING,
     JOIN_MEETING,
-	CLOSE_CAMERA,
-
+    CLOSE_CAMERA,
+    AUTH_B,           // 认证请求
+    AUTH_OK_FACTORY,  
+    AUTH_OK_EXPERT, 
+    AUTH_OK_ADMIN,     // 认证成功
+    AUTH_FAILED,    // 认证失败
+    AUTH_REGISTER,  // 注册请求
+    AUTH_REGISTER_OK,    // 注册成功
+    AUTH_REGISTER_FAILED,// 注册失败
     CREATE_MEETING_RESPONSE = 20,
     PARTNER_EXIT = 21,
     PARTNER_JOIN = 22,
     JOIN_MEETING_RESPONSE = 23,
-    PARTNER_JOIN2 = 24
+    PARTNER_JOIN2 = 24,
+     //心跳类型
+    HEARTBEAT = 99,       // 客户端-服务端
+    HEARTBEAT_ACK = 98,    // 服务端-客户端
+    AUTH = 97,
+    RemoteHostClosedError = 40,
+    OtherNetError = 41
 
+};
+// 角色枚举
+enum RoleType {
+    ROLE_UNKNOWN,
+    ROLE_FACTORY,
+    ROLE_EXPERT
 };
 enum Image_Format {
     Format_Invalid,

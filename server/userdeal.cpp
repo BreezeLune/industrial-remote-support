@@ -3,12 +3,40 @@
 #include "unp.h"
 #include "netheader.h"
 #include "msg.h"
+#include "auth.h"
+#include <ctype.h>
+#include <sys/ioctl.h>
+#include <mysql/mysql.h>
+
+// 定义一个最大允许的数据包体大小，例如64KB。防止客户端发送恶意超大包。
+#define MAX_PACKET_BODY_SIZE 65536
 
 pthread_mutex_t mlock = PTHREAD_MUTEX_INITIALIZER; // accept lock
 extern socklen_t addrlen;
 extern int listenfd;
 extern int nprocesses;
 extern Room *room;
+//
+static void dump_hex(const char* tag, const void* data, size_t len) {
+    const unsigned char* p = (const unsigned char*)data;
+    printf("[HEX] %s len=%zu :", tag, len);
+    for (size_t i = 0; i < len; ++i) printf(" %02X", p[i]);
+    printf("  |");
+    for (size_t i = 0; i < len; ++i) printf("%c", isprint(p[i]) ? p[i] : '.');
+    printf("|\n");
+    fflush(stdout);
+}
+
+static void peek_socket(int fd) {
+    unsigned char peekbuf[128];
+    int avail = 0;
+    ioctl(fd, FIONREAD, &avail);
+    if (avail <= 0) { printf("[PEEK] fd=%d no pending bytes\n", fd); return; }
+    if (avail > (int)sizeof(peekbuf)) avail = sizeof(peekbuf);
+    int n = recv(fd, peekbuf, avail, MSG_PEEK);
+    if (n > 0) dump_hex("SOCK-PEEK", peekbuf, n);
+}
+//
 
 void* thread_main(void *arg)
 {
@@ -60,8 +88,8 @@ void dowithuser(int connfd)
         ssize_t ret = Readn(connfd, head, 11);
         if(ret <= 0)
         {
-            close(connfd); //close
-            printf("%d close\n", connfd);
+           printf("[INFO] fd=%d closed (ret=%zd)\n", connfd, ret);
+            close(connfd);
             return;
         }
         else if(ret < 11)
@@ -70,14 +98,18 @@ void dowithuser(int connfd)
         }
         else if(head[0] != '$')
         {
-            printf("data format error\n");
+            printf("[ERR] fd=%d invalid start byte: 0x%02X ('%c')\n",
+                   connfd, (unsigned char)head[0],
+                   isprint((unsigned char)head[0]) ? head[0] : '.');
         }
         else
         {
             //solve datatype
-            MSG_TYPE msgtype;
+            uint16_t msgtype;
             memcpy(&msgtype, head + 1, 2);
-            msgtype = (MSG_TYPE)ntohs(msgtype);
+            uint16_t type_host = ntohs(msgtype);
+            msgtype = (MSG_TYPE)type_host;
+  
 
             //solve ip
             uint32_t ip;
@@ -85,20 +117,32 @@ void dowithuser(int connfd)
             ip = ntohl(ip);
 
             //solve datasize
-            uint32_t datasize;
-            memcpy(&datasize, head + 7, 4);
-            datasize = ntohl(datasize);
-
+            uint32_t raw_len;
+            memcpy(&raw_len, head + 7, 4);
+            uint32_t datasize = ntohl(raw_len);
+            unsigned char *ip_bytes = (unsigned char *)&ip;
+            printf("[PARSED] fd=%d msgtype=%u ip=%u.%u.%u.%u datasize=%u\n",
+               connfd, type_host,
+               ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3],
+               datasize);
+            // *** 【重要修改 1】: 增加数据包大小合法性检查 ***
+            if (datasize > MAX_PACKET_BODY_SIZE) {
+            printf("[ERR] fd=%d packet body size %u exceeds limit %d. Closing connection.\n",
+                   connfd, datasize, MAX_PACKET_BODY_SIZE);
+            close(connfd);
+            return;
+            }
     //        printf("msg type %d\n", msgtype);
 
-            if(msgtype == CREATE_MEETING)
-            {
-                char tail;
-                Readn(connfd, &tail, 1);
-                //read data from client
-                if(datasize == 0 && tail == '#')
-                {
-                    char *c = (char *)&ip;
+            if(msgtype == CREATE_MEETING){
+      char tail;
+            ssize_t tr = Readn(connfd, &tail, 1);
+            printf("[DBG] fd=%d tail=0x%02X '%c'\n",
+                   connfd, (unsigned char)tail,
+                   isprint((unsigned char)tail) ? tail : '.');
+            if (datasize == 0 && tail == '#') {
+                printf("[FLOW] fd=%d CREATE_MEETING OK\n", connfd);
+                char *c = (char *)&ip;
                     printf("create meeting  ip: %d.%d.%d.%d\n", (u_char)c[3], (u_char)c[2], (u_char)c[1], (u_char)c[0]);
                     if(room->navail <=0) // no room
                     {
@@ -138,6 +182,7 @@ void dowithuser(int connfd)
                             if(write_fd(room->pptr[i].child_pipefd, &cmd, 1, connfd) < 0)
                             {
                                 printf("write fd error");
+                                Pthread_mutex_unlock(&room->lock); // 错误也要解锁
                             }
                             else
                             {
@@ -153,15 +198,16 @@ void dowithuser(int connfd)
                         Pthread_mutex_unlock(&room->lock);
 
                     }
-                }
-                else
-                {
-                    printf("1 data format error\n");
-                }
+            } else {
+                printf("[ERR] fd=%d CREATE_MEETING bad tail or datasize\n", connfd);
+                // 因为格式错误，关闭连接以防万一
+                //    close(connfd);
+            }
             }
             else if(msgtype == JOIN_MEETING)
             {
-                //read msgsize
+                printf("[FLOW] fd=%d JOIN_MEETING\n", connfd);
+            //read msgsize
                 uint32_t msgsize, roomno;
                 memcpy(&msgsize, head + 7, 4);
                 msgsize = ntohl(msgsize);
@@ -241,19 +287,233 @@ void dowithuser(int connfd)
                     }
                 }
             }
+               /*————————————————————登录注册相关代码，勿动——————————————————————*/
+else if (msgtype == AUTH_B) {  // 处理登录请求
+    printf("Auth request from IP: %u.%u.%u.%u\n", 
+           (ip >> 24) & 0xFF, (ip >> 16) & 0xFF,
+           (ip >> 8) & 0xFF, ip & 0xFF);
+    
+    // 添加安全校验 - 使用合理的最大值
+    if (datasize <= 0 || datasize > 1024) { // 使用1024作为合理最大值
+        printf("Invalid auth datasize: %u\n", datasize);
+        continue;
+    }
+    
+    char *data = (char*)malloc(datasize + 1);
+    if (!data) {
+        perror("malloc failed");
+        continue;
+    }
+    
+    // 先读数据再读结束符
+    ssize_t n = Readn(connfd, data, datasize);
+    if (n != datasize) {
+        free(data);
+        printf("Auth data read error: %ld/%u\n", (long)n, datasize);
+        continue;
+    }
+    data[datasize] = '\0';
+    
+    // 读取结束符
+    char tail;
+    if (Readn(connfd, &tail, 1) != 1 || tail != '#') {
+        free(data);
+        printf("AUTH missing end tag!\n");
+        continue;
+    }
+    
+    // 解析和处理数据
+    char account[64], password[64], role[16];
+    int parsed = sscanf(data, "%63[^|]|%63[^|]|%15s", account, password, role);
+    if (parsed != 3) {
+        printf("AUTH data format error: parsed %d fields\n", parsed);
+        free(data);
+        continue;
+    }
+    
+    MSG resp;
+    memset(&resp, 0, sizeof(resp)); // 正确初始化MSG结构体
+    
+    AuthResult auth = authenticateUser(account, password, role);
+    if (auth.ok) {
+        if(auth.role == "factory"){
+                resp.msgType = AUTH_OK_FACTORY;
+        }else if(auth.role == "expert"){
+            resp.msgType = AUTH_OK_EXPERT;
+        }else if(auth.role == "admin"){
+            resp.msgType = AUTH_OK_ADMIN;
+        }
+        const char* roleStr = auth.role.c_str();
+        resp.ptr = strdup(roleStr);
+        resp.len = strlen(resp.ptr);
+        printf("Login success, role: %s\n", roleStr); // 添加调试输出
+    } else {
+        resp.msgType = AUTH_FAILED;
+        resp.ptr = strdup("账号/密码/角色不匹配");
+        resp.len = strlen(resp.ptr);
+    }
+    writetofd(connfd, resp);
+    free(data);
+}
+/*————————————————————登录注册相关代码，勿动——————————————————————*/
+//注册
+    else if (msgtype == AUTH_REGISTER) {  // 处理注册请求
+    printf("Register request from IP: %u.%u.%u.%u\n", 
+           (ip >> 24) & 0xFF, (ip >> 16) & 0xFF,
+           (ip >> 8) & 0xFF, ip & 0xFF);
+                // 正确读取完整数据包
+    char *data = (char*)malloc(datasize + 1);
+    ssize_t n = Readn(connfd, data, datasize);  // 读取数据部分
+    if (n != datasize) {
+        free(data);
+        printf("read data error\n");
+        continue;
+    }
+    data[datasize] = '\0';
+    
+    // 读取结束符
+    char tail;
+    if (Readn(connfd, &tail, 1) != 1 || tail != '#') {
+        free(data);
+        printf("data format error: missing end tag\n");
+        continue;
+    }
+
+    // 解析数据："username|password|email|role"
+    char username[64], password[64], email[64], role[16];
+    sscanf(data, "%63[^|]|%63[^|]|%63[^|]|%15s", username, password, email, role);
+    
+    // ... 后续处理 ...
+
+            //MYSQL *conn = db_init();
+            MSG resp;
+            memset(&resp, 0, sizeof(resp));
+            resp.msgType = AUTH_REGISTER_FAILED;
+            AuthResult regi = registerUser(username, password, email, "", role);
+            printf("Register request: username=%s, email=%s, role=%s\n", username, email, role);
+            if(regi.ok == true){
+                printf("注册成功: %s\n", username);
+                resp.msgType =AUTH_REGISTER_OK;
+                resp.ptr = strdup("注册成功,待管理员审核");
+            }
+            else{
+                printf("注册失败");
+                resp.ptr = strdup("注册失败");
+                resp.len = strlen(resp.ptr);
+            }
+            resp.len = strlen(resp.ptr);
+/*resp.len = strlen(resp.ptr);
+            if (conn) {
+                if (db_register_user(conn, username, password, email, role)) {
+                    resp.msgType = AUTH_REGISTER_OK;
+                    resp.ptr = strdup("注册成功,待管理员审核");
+                } else {
+                    resp.ptr = strdup(mysql_error(conn)); // 返回数据库错误
+                }
+                resp.len = strlen(resp.ptr);
+                mysql_close(conn);
+            } else {
+                resp.ptr = strdup("数据库连接失败");
+                resp.len = strlen(resp.ptr);
+            }
+*/
+            writetofd(connfd, resp);
+            free(data);
+            printf("success");
+    }
+    /*————————————————————登录注册相关代码，勿动——————————————————————*/
+         else if(msgtype == HEARTBEAT)
+            {
+                char tail;
+                Readn(connfd, &tail, 1);
+                // 验证心跳包数据格式
+                if(datasize == 0 && tail == '#')
+                {
+                    // 心跳包处理：构造并发送心跳确认包
+                    MSG msg;
+                    memset(&msg, 0, sizeof(msg));
+                    msg.msgType = HEARTBEAT_ACK;
+                    msg.len = 0;
+                    msg.ptr = NULL;
+                    writetofd(connfd, msg);
+                    printf("Received HEARTBEAT from client, sent HEARTBEAT_ACK\n");
+                }
+                else
+                {
+                    printf("HEARTBEAT data format error\n");
+                }
+            }
+            else if(msgtype == AUTH)
+            {
+                char tail;
+                Readn(connfd, &tail, 1);
+                // 验证认证消息数据格式
+                if(datasize == 0 && tail == '#')
+                {
+                    // 接受认证消息（不做实际认证处理，只是确认收到）
+                    printf("Received AUTH message from client, accepted\n");
+                    // 可以选择发送确认消息
+                    MSG msg;
+                    memset(&msg, 0, sizeof(msg));
+                    msg.msgType = HEARTBEAT_ACK; // 使用心跳确认作为简单的响应
+                    msg.len = 0;
+                    msg.ptr = NULL;
+                    writetofd(connfd, msg);
+                }
+                else
+                {
+                    printf("AUTH data format error\n");
+                }
+            }
             else
             {
-                printf("data format error\n");
+                // // 对于其他不支持的消息类型，只打印信息，不报错
+                // printf("Received unsupported message type: %d, ignoring\n", msgtype);
+                // // 读取剩余数据以保持连接正常
+                // char tail[1024];
+                // if(datasize > 0)
+                // {
+                //     Readn(connfd, tail, datasize);
+                // }
+                // Readn(connfd, tail, 1); // 读取结尾的#
+
+                // *** 【重要修改 2】: 安全地排空（丢弃）未知消息的数据体 ***
+                printf("Received unsupported message type: %u, ignoring and draining %u bytes.\n", msgtype, datasize);
+
+                // 使用一个临时的小缓冲区来循环读取并丢弃数据
+                char drain_buf[1024];
+                uint32_t remaining = datasize;
+                while (remaining > 0) {
+                    size_t to_read = (remaining > sizeof(drain_buf)) ? sizeof(drain_buf) : remaining;
+                    ssize_t drained_bytes = Readn(connfd, drain_buf, to_read);
+                    if (drained_bytes <= 0) {
+                        printf("[ERR] fd=%d connection closed while draining data. Aborting.\n", connfd);
+                        close(connfd);
+                        return; // 立即退出函数
+                    }
+                    remaining -= drained_bytes;
+                }
+
+                // 最后，读取并丢弃结尾的 '#'
+                char tail;
+                Readn(connfd, &tail, 1);
+                break;
             }
-        }
     }
 }
-
+}
 
 void writetofd(int fd, MSG msg)
 {
-    char *buf = (char *) malloc(100);
-    memset(buf, 0, 100);
+    // 计算所需缓冲区大小：头(11) + 数据 + 尾(1)
+    size_t total_size = 11 + msg.len + 1;
+    char *buf = (char *) malloc(total_size);
+    if (!buf) {
+        perror("malloc failed");
+        return;
+    }
+    memset(buf, 0, total_size);
+    
     int bytestowrite = 0;
     buf[bytestowrite++] = '$';
 
@@ -263,7 +523,12 @@ void writetofd(int fd, MSG msg)
 
     bytestowrite += 2;//skip type
 
-    bytestowrite += 4; //skip ip
+      // 填充IP字段，而不是跳过
+    // 对于服务器响应，我们可以使用0.0.0.0作为IP
+    uint32_t server_ip = 0; // 0.0.0.0
+    server_ip = htonl(server_ip);
+    memcpy(buf + bytestowrite, &server_ip, sizeof(uint32_t));
+    bytestowrite += 4;
 
     uint32_t size = msg.len;
     size = htonl(size);

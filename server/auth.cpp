@@ -132,8 +132,8 @@ AuthResult validateToken(const std::string& token) {
         return result;
     }
     if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
-        result.error = "DB_ERROR";
         mysql_close(conn);
+        result.error = "DB_ERROR";
         return result;
     }
 
@@ -154,12 +154,14 @@ AuthResult validateToken(const std::string& token) {
         }
 
         MYSQL_BIND bind[1];
+            mysql_close(conn);
         memset(bind, 0, sizeof(bind));
         bind[0].buffer_type = MYSQL_TYPE_STRING;
         bind[0].buffer = (char*)token.c_str();
         bind[0].buffer_length = token.length();
 
         if (mysql_stmt_bind_param(stmt, bind) != 0) {
+            mysql_close(conn);
             result.error = "DB_ERROR";
             mysql_stmt_close(stmt);
             mysql_close(conn);
@@ -181,14 +183,13 @@ AuthResult validateToken(const std::string& token) {
         MYSQL_BIND resultBind[3];
         memset(resultBind, 0, sizeof(resultBind));
         resultBind[0].buffer_type = MYSQL_TYPE_LONG;
-        resultBind[0].buffer = (void*)&userId;
-        resultBind[0].is_unsigned = 0;
+        resultBind[0].buffer = (char*)&userId;
         resultBind[1].buffer_type = MYSQL_TYPE_STRING;
-        resultBind[1].buffer = (void*)role;
+        resultBind[1].buffer = (char*)role;
         resultBind[1].buffer_length = sizeof(role);
         resultBind[1].length = &roleLen;
         resultBind[2].buffer_type = MYSQL_TYPE_STRING;
-        resultBind[2].buffer = (void*)expireTimeStr;
+        resultBind[2].buffer = (char*)expireTimeStr;
         resultBind[2].buffer_length = sizeof(expireTimeStr);
         resultBind[2].length = &expireLen;
 
@@ -221,23 +222,9 @@ AuthResult validateToken(const std::string& token) {
             return result;
         }
 
-        // 检查 expireTimeStr 是否有效
-        if (expireLen == 0 || expireTimeStr[0] == '\0') {
-            result.error = "TOKEN_INVALID";
-            mysql_stmt_free_result(stmt);
-            mysql_stmt_close(stmt);
-            mysql_close(conn);
-            return result;
-        }
-
+        // Check expiration
         struct tm tm_expire = {0};
-        if (!strptime(expireTimeStr, "%Y-%m-%d %H:%M:%S", &tm_expire)) {
-            result.error = "TOKEN_INVALID";
-            mysql_stmt_free_result(stmt);
-            mysql_stmt_close(stmt);
-            mysql_close(conn);
-            return result;
-        }
+        strptime(expireTimeStr, "%Y-%m-%d %H:%M:%S", &tm_expire);
         time_t expireTime = mktime(&tm_expire);
         time_t now = time(nullptr);
 
@@ -275,31 +262,36 @@ AuthResult registerUser(const std::string& username, const std::string& password
     result.token = "";
     result.error = "";
     result.status = "pending";
-
+    printf("执行SQL\n");
     // 1. 检查用户名是否已存在
     if (isUsernameExists(username)) {
         result.error = "USERNAME_EXISTS";
+        printf("执行SQLfailed7\n");
         return result;
     }
-
+printf("insert0\n");
     // 2. 校验角色是否合法
     if (requestedRole != "admin" && requestedRole != "factory" && requestedRole != "expert" && requestedRole != "auditor") {
         result.error = "INVALID_ROLE";
+        printf("执行SQLfailed8\n");
         return result;
     }
-
+printf("insert1\n");
     // 3. 数据库连接
     MYSQL* conn = mysql_init(nullptr);
     if (!conn) {
         result.error = "DB_ERROR";
+         printf("执行SQLfailed1\n");
         return result;
+       
     }
     if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
         mysql_close(conn);
         result.error = "DB_ERROR";
+         printf("执行SQLfailed2\n");
         return result;
     }
-
+printf("insert2\n");
     try {
         // 4. 密码加密
         std::string hashedPwd = hashPassword(password);
@@ -309,17 +301,19 @@ AuthResult registerUser(const std::string& username, const std::string& password
         if (!stmt) {
             result.error = "DB_ERROR";
             mysql_close(conn);
+             printf("执行SQLfailed3\n");
             return result;
         }
 
-        const char* query = "INSERT INTO users (username, password, role, email, company, approved, status) VALUES (?, ?, ?, ?, ?, false, 'pending')";
+        const char* query = "INSERT INTO users (username, password, role, email, company, status) VALUES (?, ?, ?, ?, ?, 'pending')";
         if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
             result.error = "DB_ERROR";
             mysql_stmt_close(stmt);
             mysql_close(conn);
+             printf("执行SQLfailed5\n");
             return result;
         }
-
+        printf("insert3\n");
         MYSQL_BIND bind[5];
         memset(bind, 0, sizeof(bind));
         // username
@@ -347,6 +341,7 @@ AuthResult registerUser(const std::string& username, const std::string& password
             result.error = "DB_ERROR";
             mysql_stmt_close(stmt);
             mysql_close(conn);
+            printf("执行SQLfailed9\n");
             return result;
         }
 
@@ -354,6 +349,7 @@ AuthResult registerUser(const std::string& username, const std::string& password
             result.error = "DB_ERROR";
             mysql_stmt_close(stmt);
             mysql_close(conn);
+            printf("执行SQLfailed10\n");
             return result;
         }
 
@@ -367,192 +363,18 @@ AuthResult registerUser(const std::string& username, const std::string& password
 
         mysql_stmt_close(stmt);
         mysql_close(conn);
+        printf("执行SQLhere\n");
         return result;
     }
     catch (...) {
         result.error = "DB_ERROR";
+        printf("执行SQLfailed11\n");
         mysql_close(conn);
         return result;
     }
 }
 
-
-bool rejectUser(int userId, int adminId) {
-    // 1. 初始化数据库连接
-    MYSQL* conn = mysql_init(nullptr); // 创建一个 MYSQL 连接对象
-    if (!conn) {
-        return false; // 初始化失败，直接返回 false
-    }
-    // 2. 连接数据库
-    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
-        mysql_close(conn); // 连接失败，释放资源
-        return false;
-    }
-
-    try {
-        // 3. 构造 SQL 语句，更新用户状态为 rejected，并记录操作管理员
-        const char* query = "UPDATE users SET status = 'rejected', rejected_by = ? WHERE id = ?";
-        MYSQL_STMT* stmt = mysql_stmt_init(conn); // 创建预处理语句对象
-        if (!stmt) {
-            mysql_close(conn);
-            return false;
-        }
-        // 4. 预处理 SQL 语句
-        if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
-            mysql_stmt_close(stmt);
-            mysql_close(conn);
-            return false;
-        }
-        // 5. 绑定参数
-        MYSQL_BIND bind[2];
-        memset(bind, 0, sizeof(bind));
-        // rejected_by（管理员ID）
-        bind[0].buffer_type = MYSQL_TYPE_LONG;
-        bind[0].buffer = (char*)&adminId;
-        // 用户ID
-        bind[1].buffer_type = MYSQL_TYPE_LONG;
-        bind[1].buffer = (char*)&userId;
-
-        if (mysql_stmt_bind_param(stmt, bind) != 0) {
-            mysql_stmt_close(stmt);
-            mysql_close(conn);
-            return false;
-        }
-        // 6. 执行 SQL
-        if (mysql_stmt_execute(stmt) != 0) {
-            mysql_stmt_close(stmt);
-            mysql_close(conn);
-            return false;
-        }
-        // 7. 清理资源
-        mysql_stmt_close(stmt);
-        mysql_close(conn);
-        return true; // 操作成功
-    }
-    catch (...) {
-        mysql_close(conn); // 异常时释放资源
-        return false;
-    }
-}
-
-bool approveUser(int userId, int adminId) {
-    // 1. 初始化数据库连接
-    MYSQL* conn = mysql_init(nullptr); // 创建一个 MYSQL 连接对象
-    if (!conn) {
-        return false; // 初始化失败，直接返回 false
-    }
-    // 2. 连接数据库
-    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
-        mysql_close(conn); // 连接失败，释放资源
-        return false;
-    }
-
-    try {
-        // 3. 构造 SQL 语句，更新用户状态为 rejected，并记录操作管理员
-        const char* query = "UPDATE users SET status = 'approved', reviewed_by = ? WHERE id = ?";
-        MYSQL_STMT* stmt = mysql_stmt_init(conn); // 创建预处理语句对象
-        if (!stmt) {
-            mysql_close(conn);
-            return false;
-        }
-        // 4. 预处理 SQL 语句
-        if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
-            mysql_stmt_close(stmt);
-            mysql_close(conn);
-            return false;
-        }
-        // 5. 绑定参数
-        MYSQL_BIND bind[2];
-        memset(bind, 0, sizeof(bind));
-        // rejected_by（管理员ID）
-        bind[0].buffer_type = MYSQL_TYPE_LONG;
-        bind[0].buffer = (char*)&adminId;
-        // 用户ID
-        bind[1].buffer_type = MYSQL_TYPE_LONG;
-        bind[1].buffer = (char*)&userId;
-
-        if (mysql_stmt_bind_param(stmt, bind) != 0) {
-            mysql_stmt_close(stmt);
-            mysql_close(conn);
-            return false;
-        }
-        // 6. 执行 SQL
-        if (mysql_stmt_execute(stmt) != 0) {
-            mysql_stmt_close(stmt);
-            mysql_close(conn);
-            return false;
-        }
-        // 7. 清理资源
-        mysql_stmt_close(stmt);
-        mysql_close(conn);
-        return true; // 操作成功
-    }
-    catch (...) {
-        mysql_close(conn); // 异常时释放资源
-        return false;
-    }
-}
-
-std::vector<UserInfo> getPendingUser() {
-    std::vector<UserInfo> users;
-    MYSQL* conn = mysql_init(nullptr);
-    if (!conn) return users;
-    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
-        mysql_close(conn);
-        return users;
-    }
-    const char* query = "SELECT id, username, email, company, role, status FROM users WHERE status = 'pending'";
-    MYSQL_RES* res = nullptr;
-    MYSQL_ROW row;
-    if (mysql_query(conn, query) == 0) {
-        res = mysql_store_result(conn);
-        while ((row = mysql_fetch_row(res))) {
-            UserInfo info;
-            info.id = row[0] ? atoi(row[0]) : -1;
-            info.username = row[1] ? row[1] : "";
-            info.email = row[2] ? row[2] : "";
-            info.company = row[3] ? row[3] : "";
-            info.role = row[4] ? row[4] : "";
-            info.status = row[5] ? row[5] : "";
-            users.push_back(info);
-        }
-        mysql_free_result(res);
-    }
-    mysql_close(conn);
-    return users;
-}
-
-// 获取所有用户
-std::vector<UserInfo> getAllUsers() {
-    std::vector<UserInfo> users;
-    MYSQL* conn = mysql_init(nullptr);
-    if (!conn) return users;
-    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
-        mysql_close(conn);
-        return users;
-    }
-    const char* query = "SELECT id, username, email, company, role, status FROM users";
-    MYSQL_RES* res = nullptr;
-    MYSQL_ROW row;
-    if (mysql_query(conn, query) == 0) {
-        res = mysql_store_result(conn);
-        while ((row = mysql_fetch_row(res))) {
-            UserInfo info;
-            info.id = row[0] ? atoi(row[0]) : -1;
-            info.username = row[1] ? row[1] : "";
-            info.email = row[2] ? row[2] : "";
-            info.company = row[3] ? row[3] : "";
-            info.role = row[4] ? row[4] : "";
-            info.status = row[5] ? row[5] : "";
-            users.push_back(info);
-        }
-        mysql_free_result(res);
-    }
-    mysql_close(conn);
-    return users;
-}
-
-AuthResult authenticateUser(const std::string& username, const std::string& password) {
+AuthResult authenticateUser(const std::string& username, const std::string& password, const std::string& role) {
     
     AuthResult result;
     result.ok = false;
@@ -668,6 +490,14 @@ AuthResult authenticateUser(const std::string& username, const std::string& pass
             return result;
         }
 
+        if (role != std::string(role, roleLen)) {
+            result.error = "ROLE_MISMATCH";
+            mysql_stmt_free_result(stmt);
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return result;
+        }
+
         // Success: generate token and store in DB
         result.ok = true;
         result.userId = userId;
@@ -720,5 +550,180 @@ AuthResult authenticateUser(const std::string& username, const std::string& pass
         result.error = "DB_ERROR";
         mysql_close(conn);
         return result;
+    }
+}
+
+std::vector<UserInfo> getPendingUser() {
+    std::vector<UserInfo> users;
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) return users;
+    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
+        mysql_close(conn);
+        return users;
+    }
+    const char* query = "SELECT id, username, email, company, role, status FROM users WHERE status = 'pending'";
+    MYSQL_RES* res = nullptr;
+    MYSQL_ROW row;
+    if (mysql_query(conn, query) == 0) {
+        res = mysql_store_result(conn);
+        while ((row = mysql_fetch_row(res))) {
+            UserInfo info;
+            info.id = row[0] ? atoi(row[0]) : -1;
+            info.username = row[1] ? row[1] : "";
+            info.email = row[2] ? row[2] : "";
+            info.company = row[3] ? row[3] : "";
+            info.role = row[4] ? row[4] : "";
+            info.status = row[5] ? row[5] : "";
+            users.push_back(info);
+        }
+        mysql_free_result(res);
+    }
+    mysql_close(conn);
+    return users;
+}
+
+// 获取所有用户
+std::vector<UserInfo> getAllUsers() {
+    std::vector<UserInfo> users;
+    MYSQL* conn = mysql_init(nullptr);
+    if (!conn) return users;
+    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
+        mysql_close(conn);
+        return users;
+    }
+    const char* query = "SELECT id, username, email, company, role, status FROM users";
+    MYSQL_RES* res = nullptr;
+    MYSQL_ROW row;
+    if (mysql_query(conn, query) == 0) {
+        res = mysql_store_result(conn);
+        while ((row = mysql_fetch_row(res))) {
+            UserInfo info;
+            info.id = row[0] ? atoi(row[0]) : -1;
+            info.username = row[1] ? row[1] : "";
+            info.email = row[2] ? row[2] : "";
+            info.company = row[3] ? row[3] : "";
+            info.role = row[4] ? row[4] : "";
+            info.status = row[5] ? row[5] : "";
+            users.push_back(info);
+        }
+        mysql_free_result(res);
+    }
+    mysql_close(conn);
+    return users;
+}
+
+bool approveUser(int userId, int adminId) {
+    // 1. 初始化数据库连接
+    MYSQL* conn = mysql_init(nullptr); // 创建一个 MYSQL 连接对象
+    if (!conn) {
+        return false; // 初始化失败，直接返回 false
+    }
+    // 2. 连接数据库
+    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
+        mysql_close(conn); // 连接失败，释放资源
+        return false;
+    }
+
+    try {
+        // 3. 构造 SQL 语句，更新用户状态为 approved，并记录操作管理员
+        const char* query = "UPDATE users SET status = 'approved', reviewed_by = ? WHERE id = ?";
+        MYSQL_STMT* stmt = mysql_stmt_init(conn); // 创建预处理语句对象
+        if (!stmt) {
+            mysql_close(conn);
+            return false;
+        }
+        // 4. 预处理 SQL 语句
+        if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+        // 5. 绑定参数
+        MYSQL_BIND bind[2];
+        memset(bind, 0, sizeof(bind));
+        // reviewed_by（管理员ID）
+        bind[0].buffer_type = MYSQL_TYPE_LONG;
+        bind[0].buffer = (char*)&adminId;
+        // 用户ID
+        bind[1].buffer_type = MYSQL_TYPE_LONG;
+        bind[1].buffer = (char*)&userId;
+
+        if (mysql_stmt_bind_param(stmt, bind) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+        // 6. 执行 SQL
+        if (mysql_stmt_execute(stmt) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+        // 7. 清理资源
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return true; // 操作成功
+    }
+    catch (...) {
+        mysql_close(conn); // 异常时释放资源
+        return false;
+    }
+}
+
+bool rejectUser(int userId, int adminId) {
+    // 1. 初始化数据库连接
+    MYSQL* conn = mysql_init(nullptr); // 创建一个 MYSQL 连接对象
+    if (!conn) {
+        return false; // 初始化失败，直接返回 false
+    }
+    // 2. 连接数据库
+    if (!mysql_real_connect(conn, HOST, USER, PASS, DB_NAME, PORT, nullptr, 0)) {
+        mysql_close(conn); // 连接失败，释放资源
+        return false;
+    }
+
+    try {
+        // 3. 构造 SQL 语句，更新用户状态为 rejected，并记录操作管理员
+        const char* query = "UPDATE users SET status = 'rejected', reviewed_by = ? WHERE id = ?";
+        MYSQL_STMT* stmt = mysql_stmt_init(conn); // 创建预处理语句对象
+        if (!stmt) {
+            mysql_close(conn);
+            return false;
+        }
+        // 4. 预处理 SQL 语句
+        if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+        // 5. 绑定参数
+        MYSQL_BIND bind[2];
+        memset(bind, 0, sizeof(bind));
+        // rejected_by（管理员ID）
+        bind[0].buffer_type = MYSQL_TYPE_LONG;
+        bind[0].buffer = (char*)&adminId;
+        // 用户ID
+        bind[1].buffer_type = MYSQL_TYPE_LONG;
+        bind[1].buffer = (char*)&userId;
+
+        if (mysql_stmt_bind_param(stmt, bind) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+        // 6. 执行 SQL
+        if (mysql_stmt_execute(stmt) != 0) {
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return false;
+        }
+        // 7. 清理资源
+        mysql_stmt_close(stmt);
+        mysql_close(conn);
+        return true; // 操作成功
+    }
+    catch (...) {
+        mysql_close(conn); // 异常时释放资源
+        return false;
     }
 }
