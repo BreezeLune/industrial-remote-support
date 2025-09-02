@@ -1,6 +1,6 @@
 CC := g++
-# 排除测试文件和auth.cpp，保留validateToken.cpp作为正式运行文件
-SRC := $(filter-out test.cpp auth.cpp, $(wildcard *.cpp))
+# 排除测试文件和validateToken.cpp，只使用auth.cpp作为正式运行文件
+SRC := $(filter-out test.cpp validateToken.cpp, $(wildcard *.cpp))
 OBJ := $(SRC:%.cpp=%.o)
 HEADER := $(wildcard *.h)
 
