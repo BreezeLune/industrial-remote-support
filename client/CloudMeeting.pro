@@ -1,5 +1,4 @@
-QT       += core gui multimedia multimediawidgets network
-
+QT += core gui network multimedia multimediawidgets
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++11
@@ -22,6 +21,7 @@ SOURCES += \
     AudioInput.cpp \
     AudioOutput.cpp \
     chatmessage.cpp \
+    dialog.cpp \
     logqueue.cpp \
     main.cpp \
     mytcpsocket.cpp \
@@ -39,6 +39,7 @@ HEADERS += \
     AudioInput.h \
     AudioOutput.h \
     chatmessage.h \
+    dialog.h \
     logqueue.h \
     mytcpsocket.h \
     mytextedit.h \
@@ -52,6 +53,7 @@ HEADERS += \
     widget.h
 
 FORMS += \
+    dialog.ui \
     widget.ui
 
 # Default rules for deployment.
@@ -61,3 +63,5 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 
 RESOURCES += \
     resource.qrc
+
+LIBS += -lws2_32

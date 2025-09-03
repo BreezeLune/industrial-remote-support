@@ -1,0 +1,202 @@
+/* 全局样式设置 */
+* {
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 8pt;
+    color: #e0e0e0;
+}
+
+QWidget {
+    background-color: #2b2b2b;
+    color: #e0e0e0;
+    selection-background-color: #3daee9;
+    selection-color: white;
+}
+
+/* 分组框样式 */
+QGroupBox {
+    font-weight: bold;
+    border: 2px solid #404040;
+    border-radius: 8px;
+    margin-top: 1ex;
+    padding-top: 10px;
+    background-color: #353535;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 0 8px;
+    background-color: #404040;
+    border-radius: 4px;
+    color: #3daee9;
+}
+
+/* 按钮样式 */
+QPushButton {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 #505050, stop: 1 #383838);
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 6px 12px;
+    min-width: 70px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 #606060, stop: 1 #484848);
+    border: 1px solid #3daee9;
+}
+
+QPushButton:pressed {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 #383838, stop: 1 #505050);
+}
+
+QPushButton:disabled {
+    background-color: #323232;
+    color: #707070;
+    border: 1px solid #404040;
+}
+
+/* 功能按钮特殊样式 */
+QPushButton#joinmeetBtn,
+QPushButton#createmeetBtn,
+QPushButton#connServer {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 #3daee9, stop: 1 #2a7dbd);
+    color: white;
+}
+
+QPushButton#joinmeetBtn:hover,
+QPushButton#createmeetBtn:hover,
+QPushButton#connServer:hover {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 #4dbef9, stop: 1 #3a8dcd);
+}
+
+QPushButton#exitmeetBtn {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 #e95d3d, stop: 1 #bd2a2a);
+    color: white;
+}
+
+QPushButton#exitmeetBtn:hover {
+    background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 #f96d4d, stop: 1 #cd3a3a);
+}
+
+/* 输入框样式 */
+QLineEdit {
+    background-color: #404040;
+    border: 1px solid #505050;
+    border-radius: 4px;
+    padding: 6px;
+    selection-background-color: #3daee9;
+    selection-color: white;
+}
+
+QLineEdit:focus {
+    border: 1px solid #3daee9;
+    background-color: #484848;
+}
+
+QLineEdit:disabled {
+    background-color: #353535;
+    color: #707070;
+}
+
+/* 标签样式 */
+QLabel {
+    background-color: transparent;
+    border: none;
+    color: #e0e0e0;
+}
+
+QLabel#outlog, QLabel#mainshow_label {
+    background-color: #252525;
+    border: 1px solid #404040;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+/* 列表和滚动区域样式 */
+QListWidget, QScrollArea {
+    background-color: #252525;
+    border: 1px solid #404040;
+    border-radius: 4px;
+    padding: 2px;
+}
+
+QListWidget::item, QScrollArea::item {
+    background-color: transparent;
+    border: none;
+}
+
+QListWidget::item:selected, QScrollArea::item:selected {
+    background-color: #3daee9;
+    color: white;
+}
+
+/* 选项卡样式 */
+QTabWidget::pane {
+    border: 1px solid #404040;
+    border-radius: 4px;
+    background-color: #353535;
+    margin: -1px;
+}
+
+QTabBar::tab {
+    background-color: #404040;
+    border: 1px solid #505050;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    padding: 6px 12px;
+    margin-right: 2px;
+}
+
+QTabBar::tab:selected {
+    background-color: #3daee9;
+    color: white;
+}
+
+QTabBar::tab:!selected:hover {
+    background-color: #505050;
+}
+
+/* 滑块样式 */
+QSlider::groove:horizontal {
+    border: 1px solid #404040;
+    height: 8px;
+    background: #404040;
+    border-radius: 4px;
+}
+
+QSlider::handle:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 #3daee9, stop:1 #2a7dbd);
+    border: 1px solid #2a7dbd;
+    width: 18px;
+    margin: -6px 0;
+    border-radius: 9px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #3daee9;
+    border-radius: 4px;
+}
+
+/* 自定义文本编辑器样式 */
+MyTextEdit {
+    background-color: #252525;
+    border: 1px solid #404040;
+    border-radius: 4px;
+    padding: 6px;
+    selection-background-color: #3daee9;
+    selection-color: white;
+}
+
+MyTextEdit:focus {
+    border: 1px solid #3daee9;
+}

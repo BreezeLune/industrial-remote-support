@@ -19,9 +19,11 @@
 #include <QCompleter>
 #include <QStringListModel>
 #include <QSound>
+#include <winsock2.h>
 QRect  Widget::pos = QRect(-1, -1, -1, -1);
 
 extern LogQueue *logqueue;
+extern QUEUE_DATA<MESG> queue_send;
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
@@ -77,6 +79,7 @@ Widget::Widget(QWidget *parent)
     //数据处理（局部线程）
     _mytcpSocket = new MyTcpSocket(); // 底层线程专管发送
     connect(_mytcpSocket, SIGNAL(sendTextOver()), this, SLOT(textSend()));
+    connect(_mytcpSocket, SIGNAL(reconnected()), this, SLOT(onReconnected()));
     //connect(_mytcpSocket, SIGNAL(socketerror(QAbstractSocket::SocketError)), this, SLOT(mytcperror(QAbstractSocket::SocketError)));
 
 
@@ -109,7 +112,7 @@ Widget::Widget(QWidget *parent)
 
     //------------------启动接收数据线程-------------------------
     _recvThread = new RecvSolve();
-    connect(_recvThread, SIGNAL(datarecv(MESG*)), this, SLOT(datasolve(MESG*)), Qt::BlockingQueuedConnection);
+    connect(_recvThread, SIGNAL(datarecv(MESG*)), this, SLOT(datasolve(MESG*)), Qt::QueuedConnection);
     _recvThread->start();
 
     //预览窗口重定向在MyVideoSurface
@@ -123,14 +126,16 @@ Widget::Widget(QWidget *parent)
 
 
     _aoutput = new AudioOutput();
-	_ainputThread->start(); //获取音频，发送
-	_aoutput->start(); //播放
+    _ainputThread->start(); //获取音频，发送
+    _aoutput->start(); //播放
 
     connect(this, SIGNAL(startAudio()), _ainput, SLOT(startCollect()));
     connect(this, SIGNAL(stopAudio()), _ainput, SLOT(stopCollect()));
     connect(_ainput, SIGNAL(audioinputerror(QString)), this, SLOT(audioError(QString)));
     connect(_aoutput, SIGNAL(audiooutputerror(QString)), this, SLOT(audioError(QString)));
     connect(_aoutput, SIGNAL(speaker(QString)), this, SLOT(speaks(QString)));
+
+
     //设置滚动条
     ui->scrollArea->verticalScrollBar()->setStyleSheet("QScrollBar:vertical { width:8px; background:rgba(0,0,0,0%); margin:0px,0px,0px,0px; padding-top:9px; padding-bottom:9px; } QScrollBar::handle:vertical { width:8px; background:rgba(0,0,0,25%); border-radius:4px; min-height:20; } QScrollBar::handle:vertical:hover { width:8px; background:rgba(0,0,0,50%); border-radius:4px; min-height:20; } QScrollBar::add-line:vertical { height:9px;width:8px; border-image:url(:/images/a/3.png); subcontrol-position:bottom; } QScrollBar::sub-line:vertical { height:9px;width:8px; border-image:url(:/images/a/1.png); subcontrol-position:top; } QScrollBar::add-line:vertical:hover { height:9px;width:8px; border-image:url(:/images/a/4.png); subcontrol-position:bottom; } QScrollBar::sub-line:vertical:hover { height:9px;width:8px; border-image:url(:/images/a/2.png); subcontrol-position:top; } QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical { background:rgba(0,0,0,10%); border-radius:4px; }");
     ui->listWidget->setStyleSheet("QScrollBar:vertical { width:8px; background:rgba(0,0,0,0%); margin:0px,0px,0px,0px; padding-top:9px; padding-bottom:9px; } QScrollBar::handle:vertical { width:8px; background:rgba(0,0,0,25%); border-radius:4px; min-height:20; } QScrollBar::handle:vertical:hover { width:8px; background:rgba(0,0,0,50%); border-radius:4px; min-height:20; } QScrollBar::add-line:vertical { height:9px;width:8px; border-image:url(:/images/a/3.png); subcontrol-position:bottom; } QScrollBar::sub-line:vertical { height:9px;width:8px; border-image:url(:/images/a/1.png); subcontrol-position:top; } QScrollBar::add-line:vertical:hover { height:9px;width:8px; border-image:url(:/images/a/4.png); subcontrol-position:bottom; } QScrollBar::sub-line:vertical:hover { height:9px;width:8px; border-image:url(:/images/a/2.png); subcontrol-position:top; } QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical { background:rgba(0,0,0,10%); border-radius:4px; }");
@@ -148,7 +153,7 @@ Widget::Widget(QWidget *parent)
 
 void Widget::cameraImageCapture(QVideoFrame frame)
 {
-//    qDebug() << QThread::currentThreadId() << this;
+    //    qDebug() << QThread::currentThreadId() << this;
 
     if(frame.isValid() && frame.isReadable())
     {
@@ -161,7 +166,7 @@ void Widget::cameraImageCapture(QVideoFrame frame)
 
         if(partner.size() > 1)
         {
-			emit pushImg(img);
+            emit pushImg(img);
         }
 
         if(_mytcpSocket->getlocalip() == mainip)
@@ -217,7 +222,7 @@ Widget::~Widget()
         _sendText->stopImmediately();
         _sendText->wait();
     }
-    
+
     if (_ainputThread->isRunning())
     {
         _ainputThread->quit();
@@ -243,15 +248,26 @@ Widget::~Widget()
 
 void Widget::on_createmeetBtn_clicked()
 {
-    if(false == _createmeet)
-    {
-        ui->createmeetBtn->setDisabled(true);
-        ui->openAudio->setDisabled(true);
-        ui->openVedio->setDisabled(true);
-        ui->exitmeetBtn->setDisabled(true);
-        emit PushText(CREATE_MEETING); //将 “创建会议"加入到发送队列
-        WRITE_LOG("create meeting");
+
+    try {
+        WRITE_LOG("Attempting to create meeting...");
+        // 原有代码...
+        if(false == _createmeet)
+        {
+            ui->createmeetBtn->setDisabled(true);
+            ui->openAudio->setDisabled(true);
+            ui->openVedio->setDisabled(true);
+            ui->exitmeetBtn->setDisabled(true);
+            emit PushText(CREATE_MEETING); //将 “创建会议"加入到发送队列
+            WRITE_LOG("create meeting");
+        }
+
+    } catch(const std::exception& e) {
+        WRITE_LOG("Exception in create meeting: %s", e.what());
+        QMessageBox::critical(this, "Error", QString("Error: %1").arg(e.what()));
     }
+
+
 }
 
 void Widget::paintEvent(QPaintEvent *event)
@@ -291,7 +307,7 @@ void Widget::on_exitmeetBtn_clicked()
 
     ui->connServer->setDisabled(false);
     ui->groupBox_2->setTitle(QString("主屏幕"));
-//    ui->groupBox->setTitle(QString("副屏幕"));
+    //    ui->groupBox->setTitle(QString("副屏幕"));
     //清除聊天记录
     while(ui->listWidget->count() > 0)
     {
@@ -322,7 +338,7 @@ void Widget::on_openVedio_clicked()
             _imgThread->quit();
             _imgThread->wait();
             ui->openVedio->setText("开启摄像头");
-			emit PushText(CLOSE_CAMERA);
+            emit PushText(CLOSE_CAMERA);
         }
         closeImg(_mytcpSocket->getlocalip());
     }
@@ -433,9 +449,17 @@ void Widget::datasolve(MESG *msg)
 
         if(roomno != 0)
         {
+
+            // 设置房主身份
+            _isHost = true;
+
+
+            // 保存房间信息，用于断线重连
+            _mytcpSocket->setRoomInfo(roomno);
+
             QMessageBox::information(this, "Room No", QString("房间号：%1").arg(roomno), QMessageBox::Yes, QMessageBox::Yes);
 
-            ui->groupBox_2->setTitle(QString("主屏幕(房间号: %1)").arg(roomno));
+            //ui->groupBox_2->setTitle(QString("主屏幕(房间号: %1)").arg(roomno));
             ui->outlog->setText(QString("创建成功 房间号: %1").arg(roomno) );
             _createmeet = true;
             ui->exitmeetBtn->setDisabled(false);
@@ -446,7 +470,7 @@ void Widget::datasolve(MESG *msg)
             //添加用户自己
             addPartner(_mytcpSocket->getlocalip());
             mainip = _mytcpSocket->getlocalip();
-            ui->groupBox_2->setTitle(QHostAddress(mainip).toString());
+           ui->groupBox_2->setTitle(QString("主屏幕(房间号: %1) - %2").arg(roomno).arg(QHostAddress(mainip).toString()));
             ui->mainshow_label->setPixmap(QPixmap::fromImage(QImage(":/myImage/1.jpg").scaled(ui->mainshow_label->size())));
         }
         else
@@ -481,6 +505,10 @@ void Widget::datasolve(MESG *msg)
         }
         else if (c > 0)
         {
+            // 保存房间信息，用于断线重连
+            int roomno = ui->meetno->text().toInt();
+            _mytcpSocket->setRoomInfo(roomno);
+
             QMessageBox::warning(this, "Meeting information", "加入成功" , QMessageBox::Yes, QMessageBox::Yes);
             ui->outlog->setText(QString("加入成功"));
             WRITE_LOG("succeed joining room");
@@ -563,7 +591,7 @@ void Widget::datasolve(MESG *msg)
     }
     else if (msg->msg_type == CLOSE_CAMERA)
     {
-	    closeImg(msg->ip);
+        closeImg(msg->ip);
     }
     else if (msg->msg_type == PARTNER_JOIN2)
     {
@@ -573,7 +601,7 @@ void Widget::datasolve(MESG *msg)
         {
             memcpy_s(&ip, sizeof(uint32_t), msg->data + pos , sizeof(uint32_t));
             pos += sizeof(uint32_t);
-			Partner* p = addPartner(ip);
+            Partner* p = addPartner(ip);
             if (p)
             {
                 p->setpic(QImage(":/myImage/1.jpg"));
@@ -613,6 +641,11 @@ void Widget::datasolve(MESG *msg)
         _mytcpSocket->disconnectFromHost();
         _mytcpSocket->wait();
         ui->outlog->setText(QString("网络异常......"));
+    }else if (msg->msg_type == KICK_OUT_RESPONSE) {
+        handleKickResponse(msg);
+    }
+    else if (msg->msg_type == KICK_OUT_NOTIFY) {
+        handleKickNotify(msg);
     }
     if(msg->data)
     {
@@ -626,9 +659,33 @@ void Widget::datasolve(MESG *msg)
     }
 }
 
+void Widget::onReconnected()
+{
+    // 重连成功后更新UI状态
+    ui->outlog->setText("成功重新连接到服务器");
+    ui->createmeetBtn->setDisabled(false);
+    ui->joinmeetBtn->setDisabled(false);
+    ui->sendmsg->setDisabled(false);
+    ui->connServer->setDisabled(true);
+
+    // 如果之前在房间中，等待自动加入房间的响应
+    int roomNo = _mytcpSocket->getRoomNo();
+    if (roomNo > 0)
+    {
+        ui->outlog->setText(QString("正在重新加入房间 %1...").arg(roomNo));
+    }
+
+    WRITE_LOG("Reconnected to server successfully");
+}
+
 Partner* Widget::addPartner(quint32 ip)
 {
-	if (partner.contains(ip)) return NULL;
+    QMutexLocker locker(&partnerMutex); // 添加互斥锁保护partner容器的访问
+    if (partner.contains(ip)) return NULL;
+
+    // 判断是否是自己
+    bool isSelf = (ip == _mytcpSocket->getlocalip());
+
     Partner *p = new Partner(ui->scrollAreaWidgetContents ,ip);
     if (p == NULL)
     {
@@ -637,25 +694,30 @@ Partner* Widget::addPartner(quint32 ip)
     }
     else
     {
-		connect(p, SIGNAL(sendip(quint32)), this, SLOT(recvip(quint32)));
-		partner.insert(ip, p);
-		ui->verticalLayout_3->addWidget(p, 1);
 
-		//当有人员加入时，开启滑动条滑动事件，开启输入(只有自己时，不打开)
+        // 在这里连接信号
+        connect(p, &Partner::kickRequested, this, &Widget::handleKickRequest);
+
+        connect(p, SIGNAL(sendip(quint32)), this, SLOT(recvip(quint32)));
+        partner.insert(ip, p);
+        ui->verticalLayout_3->addWidget(p, 1);
+
+        //当有人员加入时，开启滑动条滑动事件，开启输入(只有自己时，不打开)
         if (partner.size() > 1)
         {
-			connect(this, SIGNAL(volumnChange(int)), _ainput, SLOT(setVolumn(int)), Qt::UniqueConnection);
-			connect(this, SIGNAL(volumnChange(int)), _aoutput, SLOT(setVolumn(int)), Qt::UniqueConnection);
+            connect(this, SIGNAL(volumnChange(int)), _ainput, SLOT(setVolumn(int)), Qt::UniqueConnection);
+            connect(this, SIGNAL(volumnChange(int)), _aoutput, SLOT(setVolumn(int)), Qt::UniqueConnection);
             ui->openAudio->setDisabled(false);
             ui->sendmsg->setDisabled(false);
             _aoutput->startPlay();
         }
-		return p;
+        return p;
     }
 }
 
 void Widget::removePartner(quint32 ip)
 {
+    QMutexLocker locker(&partnerMutex); // 添加互斥锁保护partner容器的访问
     if(partner.contains(ip))
     {
         Partner *p = partner[ip];
@@ -667,9 +729,9 @@ void Widget::removePartner(quint32 ip)
         //只有自已一个人时，关闭传输音频
         if (partner.size() <= 1)
         {
-			disconnect(_ainput, SLOT(setVolumn(int)));
-			disconnect(_aoutput, SLOT(setVolumn(int)));
-			_ainput->stopCollect();
+            disconnect(_ainput, SLOT(setVolumn(int)));
+            disconnect(_aoutput, SLOT(setVolumn(int)));
+            _ainput->stopCollect();
             _aoutput->stopPlay();
             ui->openAudio->setText(QString(OPENAUDIO).toUtf8());
             ui->openAudio->setDisabled(true);
@@ -679,6 +741,7 @@ void Widget::removePartner(quint32 ip)
 
 void Widget::clearPartner()
 {
+    QMutexLocker locker(&partnerMutex); // 添加互斥锁保护partner容器的访问
     ui->mainshow_label->setPixmap(QPixmap());
     if(partner.size() == 0) return;
 
@@ -694,14 +757,14 @@ void Widget::clearPartner()
     }
 
     //关闭传输音频
-	disconnect(_ainput, SLOT(setVolumn(int)));
+    disconnect(_ainput, SLOT(setVolumn(int)));
     disconnect(_aoutput, SLOT(setVolumn(int)));
     //关闭音频播放与采集
-	_ainput->stopCollect();
+    _ainput->stopCollect();
     _aoutput->stopPlay();
-	ui->openAudio->setText(QString(CLOSEAUDIO).toUtf8());
-	ui->openAudio->setDisabled(true);
-    
+    ui->openAudio->setText(QString(CLOSEAUDIO).toUtf8());
+    ui->openAudio->setDisabled(true);
+
 
     //关闭图片传输线程
     if(_imgThread->isRunning())
@@ -720,12 +783,12 @@ void Widget::recvip(quint32 ip)
         Partner* p = partner[mainip];
         p->setStyleSheet("border-width: 1px; border-style: solid; border-color:rgba(0, 0 , 255, 0.7)");
     }
-	if (partner.contains(ip))
-	{
-		Partner* p = partner[ip];
-		p->setStyleSheet("border-width: 1px; border-style: solid; border-color:rgba(255, 0 , 0, 0.7)");
-	}
-	ui->mainshow_label->setPixmap(QPixmap::fromImage(QImage(":/myImage/1.jpg").scaled(ui->mainshow_label->size())));
+    if (partner.contains(ip))
+    {
+        Partner* p = partner[ip];
+        p->setStyleSheet("border-width: 1px; border-style: solid; border-color:rgba(255, 0 , 0, 0.7)");
+    }
+    ui->mainshow_label->setPixmap(QPixmap::fromImage(QImage(":/myImage/1.jpg").scaled(ui->mainshow_label->size())));
     mainip = ip;
     ui->groupBox_2->setTitle(QHostAddress(mainip).toString());
     qDebug() << ip;
@@ -802,7 +865,7 @@ void Widget::dealMessageTime(QString curMsgTime)
         int curTime = curMsgTime.toInt();
         qDebug() << "curTime lastTime:" << curTime - lastTime;
         isShowTime = ((curTime - lastTime) > 60); // 两个消息相差一分钟
-//        isShowTime = true;
+        //        isShowTime = true;
     } else {
         isShowTime = true;
     }
@@ -825,4 +888,78 @@ void Widget::textSend()
     ChatMessage* messageW = (ChatMessage *)ui->listWidget->itemWidget(lastItem);
     messageW->setTextSuccess();
     ui->sendmsg->setDisabled(false);
+}
+
+void Widget::setTcpSocket(MyTcpSocket *socket)
+{
+    m_tcpSocket = socket; // 把外部的socket保存到类内
+}
+void Widget::setUserRole(const QString &role)
+{
+    m_userRole = role;
+
+    // 根据角色设置界面元素权限
+    if (role == "factory") {
+        // 工厂角色可以创建房间
+        ui->createmeetBtn->setEnabled(true);
+        ui->joinmeetBtn->setEnabled(true);
+    } else if (role == "expert") {
+        // 专家角色只能加入房间
+        ui->createmeetBtn->setEnabled(false);
+        ui->joinmeetBtn->setEnabled(true);
+    } else {
+        // 未知角色，禁用所有功能
+        ui->createmeetBtn->setEnabled(false);
+        ui->joinmeetBtn->setEnabled(false);
+    }
+}
+
+// 当用户选择踢人时
+void Widget::handleKickRequest(quint32 ip) {
+    if (!_isHost) {
+        QMessageBox::warning(this, "权限不足", "只有房主可以踢人");
+        return;
+    }
+
+    MESG* msg = (MESG*)malloc(sizeof(MESG));
+    memset(msg, 0, sizeof(MESG));
+    msg->msg_type = KICK_OUT;
+    msg->len = sizeof(quint32);
+    msg->data = (uchar*)malloc(msg->len);
+    // 1. 将IP地址从主机字节序转换成网络字节序
+    quint32 ip_net_order = htonl(ip);
+
+    // 2. 将转换后的网络字节序IP复制到消息数据中
+    memcpy(msg->data, &ip_net_order, msg->len);
+    queue_send.push_msg(msg);
+
+}
+
+// 处理服务器对踢人请求的响应
+void Widget::handleKickResponse(MESG* msg) {
+    if (msg->len > 0) {
+        int result = *(int*)msg->data;
+        if (result == 1) {
+            QMessageBox::information(this, "成功", "用户已被踢出");
+        } else {
+            QMessageBox::warning(this, "失败", "踢人操作失败");
+        }
+    }
+}
+
+// 处理服务器广播的踢人通知
+void Widget::handleKickNotify(MESG* msg) {
+    quint32 kickedIp;
+    memcpy(&kickedIp, msg->data, sizeof(quint32));
+
+    // 被踢的是自己
+    if (kickedIp == _mytcpSocket->getlocalip()) {
+        QMessageBox::information(this, "通知", "您已被踢出会议");
+        on_exitmeetBtn_clicked(); // 执行退出会议流程
+    }
+    // 被踢的是其他用户
+    else {
+        removePartner(kickedIp);
+        ui->outlog->setText(QString("%1 已被踢出会议").arg(QHostAddress(kickedIp).toString()));
+    }
 }

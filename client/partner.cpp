@@ -2,6 +2,10 @@
 #include <QDebug>
 #include <QEvent>
 #include <QHostAddress>
+#include <QMenu> // 添加 QMenu 头文件
+#include <QContextMenuEvent> // 确保包含这个头文件
+
+
 Partner::Partner(QWidget *parent, quint32 p):QLabel(parent)
 {
 //    qDebug() <<"dsaf" << this->parent();
@@ -26,4 +30,18 @@ void Partner::mousePressEvent(QMouseEvent *)
 void Partner::setpic(QImage img)
 {
     this->setPixmap(QPixmap::fromImage(img.scaled(w-10, w-10)));
+}
+
+//
+void Partner::contextMenuEvent(QContextMenuEvent* event) {
+    QMenu menu;
+    // 只有在不是自己的情况下才显示踢人菜单
+    if (!isSelf) {
+        QAction *kickAction = menu.addAction("踢出会议");
+        QAction *selectedAction = menu.exec(event->globalPos());
+
+        if (selectedAction == kickAction) {
+            emit kickRequested(ip);
+        }
+    }
 }

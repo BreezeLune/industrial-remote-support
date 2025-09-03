@@ -6,4 +6,7 @@
     <qresource prefix="/myEffect">
         <file>2.wav</file>
     </qresource>
+    <qresource prefix="/style">
+        <file>styles.qss</file>
+    </qresource>
 </RCC>

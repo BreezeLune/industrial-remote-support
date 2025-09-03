@@ -51,6 +51,7 @@ private:
     void paintEvent(QPaintEvent *event);
 
     QMap<quint32, Partner *> partner; //用于记录房间用户
+    QMutex partnerMutex; // 保护partner容器的互斥锁
     Partner* addPartner(quint32);
     void removePartner(quint32);
     void clearPartner(); //退出会议，或者会议结束
@@ -66,8 +67,14 @@ private:
 
     QStringList iplist;
 
+
+    bool _isHost = false; // 标识当前用户是否是房主
+
 public:
     Widget(QWidget *parent = nullptr);
+    // 新增：接收TCP socket的方法
+    void setTcpSocket(MyTcpSocket *socket);
+    void setUserRole(const QString &role);
     ~Widget();
 
 private slots:
@@ -79,7 +86,7 @@ private slots:
     void on_connServer_clicked();
     void cameraError(QCamera::Error);
     void audioError(QString);
-//    void mytcperror(QAbstractSocket::SocketError);
+    //    void mytcperror(QAbstractSocket::SocketError);
     void datasolve(MESG *);
     void recvip(quint32);
     void cameraImageCapture(QVideoFrame frame);
@@ -92,6 +99,12 @@ private slots:
 
     void textSend();
 
+    void onReconnected();
+
+    void handleKickRequest(quint32 ip); // 处理踢人请求
+    void handleKickResponse(MESG* msg); // 处理踢人响应
+    void handleKickNotify(MESG* msg);  // 处理踢人通知
+
 signals:
     void pushImg(QImage);
     void PushText(MSG_TYPE, QString = "");
@@ -100,5 +113,9 @@ signals:
     void volumnChange(int);
 private:
     Ui::Widget *ui;
+    MyTcpSocket *m_tcpSocket;
+    QString m_userRole;
 };
 #endif // WIDGET_H
+
+
