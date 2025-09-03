@@ -796,26 +796,28 @@ void MyTcpSocket::recvFromSocket()
         uint16_t type_local;
         qFromBigEndian<uint16_t>(recvbuf + 1, 2, &type_local);
         msgtype_local = (MSG_TYPE)type_local;
-        if (msgtype_local == CREATE_MEETING_RESPONSE || msgtype_local == PARTNER_JOIN2)
-        {
-            // 这些消息跳过IP字段，大小字段在位置7（msgType 2字节 + 4字节填充）
-            qFromBigEndian<quint32>(recvbuf + 7, 4, &data_size);
-        }
-        else
-        {
-            // 其他消息有IP字段，大小字段在位置7
-            qFromBigEndian<quint32>(recvbuf + 7, 4, &data_size);
+        // size 字段固定在 offset 7
+        qFromBigEndian<quint32>(recvbuf + 7, 4, &data_size);
+        // 自适应头长度：优先根据包尾位置判定（兼容是否带IP字段的两种实现）
+        int headerLen = MSG_HEADER;
+        if ((quint64)7 + data_size < (quint64)hasrecvive && recvbuf[7 + data_size] == '#') {
+            headerLen = 7;
+        } else if ((quint64)MSG_HEADER + data_size < (quint64)hasrecvive && recvbuf[MSG_HEADER + data_size] == '#') {
+            headerLen = MSG_HEADER;
+        } else {
+            // 如当前缓冲不足以判断，保持默认，后续校验仍会失败并等待更多数据
+            headerLen = MSG_HEADER;
         }
 
         qDebug() << "=== 消息解析 ===";
         qDebug() << "消息类型:" << msgtype_local;
         qDebug() << "数据长度:" << data_size;
         qDebug() << "已接收字节:" << hasrecvive;
-        qDebug() << "需要字节:" << (quint64)data_size + 1 + MSG_HEADER;
-        if ((quint64)data_size + 1 + MSG_HEADER <= hasrecvive) //收够一个包
+        qDebug() << "需要字节:" << (quint64)data_size + 1 + headerLen;
+        if ((quint64)data_size + 1 + headerLen <= hasrecvive) //收够一个包
         {
             qDebug() << "数据包完整，检查格式...";
-            if (recvbuf[0] == '$' && recvbuf[MSG_HEADER + data_size] == '#') //且包结构正确
+            if (recvbuf[0] == '$' && recvbuf[headerLen + data_size] == '#') //且包结构正确
             {
                 MSG_TYPE msgtype;
                 uint16_t type;
@@ -869,9 +871,9 @@ void MyTcpSocket::recvFromSocket()
 
                     // 移动缓冲区指针
                     qDebug() << "[Heartbeat Debug] Moving buffer pointer after HEARTBEAT_ACK processing";
-                    memmove_s(recvbuf, 4 * MB, recvbuf + MSG_HEADER + data_size + 1,
-                              hasrecvive - ((quint64)data_size + 1 + MSG_HEADER));
-                    hasrecvive -= ((quint64)data_size + 1 + MSG_HEADER);
+                    memmove_s(recvbuf, 4 * MB, recvbuf + headerLen + data_size + 1,
+                              hasrecvive - ((quint64)data_size + 1 + headerLen));
+                    hasrecvive -= ((quint64)data_size + 1 + headerLen);
                     return; // 处理完心跳包后直接返回，继续接收下一个包
                 }
                 // 处理认证响应
@@ -908,9 +910,9 @@ void MyTcpSocket::recvFromSocket()
 
                     // 移动缓冲区指针
                     qDebug() << "[Connection Debug] Moving buffer pointer after AUTH response processing";
-                    memmove_s(recvbuf, 4 * MB, recvbuf + MSG_HEADER + data_size + 1,
-                              hasrecvive - ((quint64)data_size + 1 + MSG_HEADER));
-                    hasrecvive -= ((quint64)data_size + 1 + MSG_HEADER);
+                    memmove_s(recvbuf, 4 * MB, recvbuf + headerLen + data_size + 1,
+                              hasrecvive - ((quint64)data_size + 1 + headerLen));
+                    hasrecvive -= ((quint64)data_size + 1 + headerLen);
                     return; // 处理完认证响应后直接返回，继续接收下一个包
                 }
 
@@ -924,14 +926,26 @@ void MyTcpSocket::recvFromSocket()
                         // 打印原始数据
                         qDebug() << "原始数据:";
                         for(quint32 i = 0; i < data_size; i++) {
-                            printf("%02X ", recvbuf[MSG_HEADER + i]);
+                            printf("%02X ", recvbuf[headerLen + i]);
                         }
                         printf("\n");
 
-                        qint32 roomNo;
-                        // 修复：CREATE_MEETING_RESPONSE跳过IP字段，数据从MSG_HEADER开始
-                        // MSG_HEADER = 11，但CREATE_MEETING_RESPONSE的数据从位置11开始
-                        qFromBigEndian<qint32>(recvbuf + MSG_HEADER, 4, &roomNo);
+                        // 调试打印：头长度与原始4字节载荷
+                        qDebug() << "headerLen=" << headerLen;
+                        if (data_size >= 4) {
+                            printf("payload[4]= %02X %02X %02X %02X\n",
+                                   (unsigned char)recvbuf[headerLen],
+                                   (unsigned char)recvbuf[headerLen + 1],
+                                   (unsigned char)recvbuf[headerLen + 2],
+                                   (unsigned char)recvbuf[headerLen + 3]);
+                        }
+
+                        // 先按大端（网络序）解析，不为0则采用；为0则再按小端兜底一次
+                        qint32 roomNoBE = 0;
+                        qint32 roomNoLE = 0;
+                        qFromBigEndian<qint32>(recvbuf + headerLen, 4, &roomNoBE);
+                        qFromLittleEndian<qint32>(recvbuf + headerLen, 4, &roomNoLE);
+                        qint32 roomNo = (roomNoBE != 0 ? roomNoBE : roomNoLE);
                         qDebug() << "解析的房间号:" << roomNo;
 
                         MESG* msg = (MESG*)malloc(sizeof(MESG));
@@ -1018,7 +1032,7 @@ void MyTcpSocket::recvFromSocket()
                                 int pos = 0;
                                 for (size_t i = 0; i < data_size / sizeof(uint32_t); i++)
                                 {
-                                    qFromBigEndian<uint32_t>(recvbuf + MSG_HEADER + pos, sizeof(uint32_t), &ip);
+                                    qFromBigEndian<uint32_t>(recvbuf + headerLen + pos, sizeof(uint32_t), &ip);
                                     memcpy_s(msg->data + pos, data_size - pos, &ip, sizeof(uint32_t));
                                     pos += sizeof(uint32_t);
                                 }
@@ -1170,11 +1184,13 @@ void MyTcpSocket::recvFromSocket()
                     emit registerFailed(QString::fromUtf8(errData));
                 }
                 else if (msgtype == AUTH_OK_ADMIN) {
-                    // 直接读取文本数据，不进行解压缩
+                    // 读取 角色|用户ID
                     QByteArray authData((char*)recvbuf + MSG_HEADER, data_size);
-                    qDebug() << "登录成功响应:" << authData.toHex();
-                    if(data_size == 0) {
-                        qWarning() << "Empty role received, using fallback mechanism";
+                    QString payload = QString::fromUtf8(authData);
+                    QStringList parts = payload.split('|');
+                    if (parts.size() == 2) {
+                        bool ok = false; int adminId = parts[1].toInt(&ok);
+                        if (ok) { m_lastAdminId = adminId; emit adminLogin(adminId); }
                     }
                     emit loginSuccess("admin");
                 }
@@ -1204,6 +1220,11 @@ void MyTcpSocket::recvFromSocket()
                     qDebug() << "登录失败响应:" << authData;
                     emit loginFailed(QString::fromUtf8(authData));
                 }
+                // 管理员接口响应
+                else if (msgtype == GET_PENDING_USERS_RESPONSE || msgtype == APPROVE_USER_RESPONSE || msgtype == REJECT_USER_RESPONSE) {
+                    QByteArray payload(reinterpret_cast<const char*>(recvbuf + headerLen), data_size);
+                    emit adminMessage(static_cast<int>(msgtype), payload);
+                }
 
             }
             else
@@ -1211,10 +1232,10 @@ void MyTcpSocket::recvFromSocket()
                 // 增加详细的包错误调试信息
                 qDebug() << "[Package Error] Invalid package format detected";
                 qDebug() << "[Package Error] Buffer start character: '" << (char)recvbuf[0] << "' (expected '$')";
-                qDebug() << "[Package Error] Buffer end character: '" << (char)(recvbuf[MSG_HEADER + data_size]) << "' (expected '#')";
+                qDebug() << "[Package Error] Buffer end character: '" << (char)(recvbuf[headerLen + data_size]) << "' (expected '#')";
                 qDebug() << "[Package Error] Data size parsed: " << data_size;
                 qDebug() << "[Package Error] Total bytes received: " << hasrecvive;
-                qDebug() << "[Package Error] Required bytes for complete package: " << (quint64)data_size + 1 + MSG_HEADER;
+                qDebug() << "[Package Error] Required bytes for complete package: " << (quint64)data_size + 1 + headerLen;
 
                 // 打印缓冲区前几个字节的十六进制表示，帮助调试
                 qDebug() << "[Package Error] First 20 bytes of buffer (hex):";
@@ -1222,8 +1243,8 @@ void MyTcpSocket::recvFromSocket()
                     qDebug() << QString("0x%1").arg((unsigned char)recvbuf[i], 2, 16, QLatin1Char('0'));
                 }
             }
-            memmove_s(recvbuf, 4 * MB, recvbuf + MSG_HEADER + data_size + 1, hasrecvive - ((quint64)data_size + 1 + MSG_HEADER));
-            hasrecvive -= ((quint64)data_size + 1 + MSG_HEADER);
+            memmove_s(recvbuf, 4 * MB, recvbuf + headerLen + data_size + 1, hasrecvive - ((quint64)data_size + 1 + headerLen));
+            hasrecvive -= ((quint64)data_size + 1 + headerLen);
         }
         else
         {

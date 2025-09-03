@@ -1,6 +1,7 @@
 #include "dialog.h"
 #include "ui_dialog.h"
 #include "widget.h" // 包含目标 Widget 的头文件
+#include "adminpanel.h"
 #include "netheader.h"
 #include "mytcpsocket.h"
 #include <QTcpSocket>
@@ -75,7 +76,7 @@ void Dialog::onLoginClicked()
     }
 
     // 连接服务器 (假设服务器IP和端口是固定的，也可以从界面输入)
-    QString serverIp = "192.168.90.91"; // 实际使用时修改为你的服务器IP
+    QString serverIp = "192.168.87.131"; // 实际使用时修改为你的服务器IP
     QString serverPort = "8080";    // 实际使用时修改为你的服务器端口
     //m_tcpSocket->sendLoginData(username, password,role);
     ui->label_status->setText("正在连接服务器...");
@@ -154,7 +155,7 @@ void Dialog::onRegisterClicked()
     // m_tcpSocket->sendRegisterData(username, password, email, role);
 
     // 连接服务器并发送注册数据
-    QString serverIp = "192.168.90.91";
+    QString serverIp = "192.168.87.131";
     QString serverPort = "8080";
     ui->label_status_2->setText("正在连接服务器...");
     if (m_tcpSocket->connectToServer(serverIp, serverPort, QIODevice::ReadWrite)) {
@@ -186,35 +187,34 @@ void Dialog::onLoginSuccess(const QString &role)
     qDebug() << "Login success! Role received:" << role; // 调试输出
 
     ui->label_status->setText("登录成功，正在进入系统...");
-    // 1. 断开TCP连接并销毁socket实例
-    if (m_tcpSocket) {
-        // 将MyTcpSocket指针转换为基类QTcpSocket指针
-        QTcpSocket* baseSocket = dynamic_cast<QTcpSocket*>(m_tcpSocket);
-
-        // 断开连接
-        m_tcpSocket->disconnectFromHost();
-
-        // 通过基类指针调用state()和waitForDisconnected()
-        if (baseSocket && baseSocket->state() != QAbstractSocket::UnconnectedState) {
-            baseSocket->waitForDisconnected(); // 等待连接断开
+    // 管理员：仅打开管理员审核界面，不再弹出两个界面，且保留socket连接
+    if (role == "admin") {
+        AdminPanel *panel = new AdminPanel();
+        panel->setTcpSocket(m_tcpSocket);
+        // 监听 adminLogin，把管理员ID传入面板
+        connect(m_tcpSocket, &MyTcpSocket::adminLogin, panel, &AdminPanel::setCurrentUserId, Qt::UniqueConnection);
+        // 若信号已在之前发出，这里主动兜底设置一次
+        if (m_tcpSocket->lastAdminId() > 0) {
+            panel->setCurrentUserId(m_tcpSocket->lastAdminId());
         }
+        panel->showAdminPanel();
+        this->close();
+        return;
+    }
 
-        // 销毁socket实例
+    // 非管理员：保持原逻辑（可断开连接并进入主窗口）
+    if (m_tcpSocket) {
+        QTcpSocket* baseSocket = dynamic_cast<QTcpSocket*>(m_tcpSocket);
+        m_tcpSocket->disconnectFromHost();
+        if (baseSocket && baseSocket->state() != QAbstractSocket::UnconnectedState) {
+            baseSocket->waitForDisconnected();
+        }
         delete m_tcpSocket;
         m_tcpSocket = nullptr;
     }
 
-    //传递role参数
-    if(role =="admin"){
-        Widget *mainWidget = new Widget();
-        mainWidget->setUserRole(role); // 传递角色信息
-        mainWidget->show();
-        this->close();
-    }
-
     Widget *mainWidget = new Widget();
-    // mainWidget->setTcpSocket(m_tcpSocket);
-    mainWidget->setUserRole(role); // 传递角色信息
+    mainWidget->setUserRole(role);
     mainWidget->show();
     this->close();
 }

@@ -33,7 +33,8 @@ SOURCES += \
     screen.cpp \
     sendimg.cpp \
     sendtext.cpp \
-    widget.cpp
+    widget.cpp \
+    adminpanel.cpp
 
 HEADERS += \
     AudioInput.h \
@@ -50,11 +51,13 @@ HEADERS += \
     screen.h \
     sendimg.h \
     sendtext.h \
-    widget.h
+    widget.h \
+    adminpanel.h
 
 FORMS += \
     dialog.ui \
-    widget.ui
+    widget.ui \
+    adminpanel.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

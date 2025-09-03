@@ -415,14 +415,14 @@ void Widget::on_connServer_clicked()
         ui->outlog->setText("成功连接到" + ip + ":" + port);
         ui->openAudio->setDisabled(true);
         ui->openVedio->setDisabled(true);
-        
+
         if(m_userRole == "factory"){
             ui->createmeetBtn->setDisabled(false);
         }else{
              ui->createmeetBtn->setDisabled(true);
             QMessageBox::information(this, "提示","无创建会议功能");
         }
-        
+
         ui->exitmeetBtn->setDisabled(true);
         ui->joinmeetBtn->setDisabled(false);
         WRITE_LOG("succeeed connecting to %s:%s", ip.toStdString().c_str(), port.toStdString().c_str());

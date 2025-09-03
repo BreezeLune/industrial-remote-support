@@ -7,4 +7,5 @@ struct UserInfo {
     std::string company;
     std::string role;
     std::string status;
+    int reviewedBy;
 };

@@ -27,6 +27,13 @@ enum MSG_TYPE
     PARTNER_JOIN = 22,
     JOIN_MEETING_RESPONSE = 23,
     PARTNER_JOIN2 = 24,
+    // 管理员审核相关
+    GET_PENDING_USERS = 60,
+    APPROVE_USER = 61,
+    REJECT_USER = 62,
+    GET_PENDING_USERS_RESPONSE = 63,
+    APPROVE_USER_RESPONSE = 64,
+    REJECT_USER_RESPONSE = 65,
      //心跳类型
     HEARTBEAT = 99,       // 客户端-服务端
     HEARTBEAT_ACK = 98,    // 服务端-客户端

@@ -29,6 +29,8 @@ public:
     // 设置房间信息，用于重连后恢复
     void setRoomInfo(int roomNo);
     int getRoomNo() const;
+    // 获取最近一次管理员登录的用户ID
+    int lastAdminId() const { return m_lastAdminId; }
 
 signals:
     // 登录验证结果信号（成功时返回角色，失败时返回错误信息）
@@ -36,6 +38,10 @@ signals:
    Q_INVOKABLE void loginFailed(const QString &errorMsg); // 登录失败，携带错误原因
    Q_INVOKABLE void registerSuccess(const QString &msg);  // 注册成功信号
    Q_INVOKABLE void registerFailed(const QString &errorMsg);  // 注册失败信号
+   // 管理员接口消息（GET_PENDING_USERS_RESPONSE / APPROVE_USER_RESPONSE / REJECT_USER_RESPONSE）
+   Q_INVOKABLE void adminMessage(int msgType, const QByteArray &data);
+   // 管理员登录成功时携带的用户ID
+   Q_INVOKABLE void adminLogin(int adminUserId);
 
 private:
     void run() override;
@@ -61,6 +67,8 @@ private:
 
     // 房间信息
     int _roomNo;
+    // 最近一次管理员ID
+    int m_lastAdminId = -1;
 
 private slots:
     bool connectServer(QString, QString, QIODevice::OpenModeFlag);

@@ -343,13 +343,25 @@ else if (msgtype == AUTH_B) {  // 处理登录请求
         }else if(auth.role == "admin"){
             resp.msgType = AUTH_OK_ADMIN;
         }
-        const char* roleStr = auth.role.c_str();
-        resp.ptr = strdup(roleStr);
+        // 返回 角色|用户ID，便于客户端记录管理员ID
+        char buf[64] = {0};
+        snprintf(buf, sizeof(buf), "%s|%d", auth.role.c_str(), auth.userId);
+        resp.ptr = strdup(buf);
         resp.len = strlen(resp.ptr);
-        printf("Login success, role: %s\n", roleStr); // 添加调试输出
+        printf("Login success, role: %s\n", auth.role.c_str()); // 添加调试输出
     } else {
         resp.msgType = AUTH_FAILED;
-        resp.ptr = strdup("账号/密码/角色不匹配");
+        if (auth.error == "USER_REJECTED") {
+            resp.ptr = strdup("该账号已被管理员拒绝，无法登录");
+        } else if (auth.error == "USER_NOT_FOUND") {
+            resp.ptr = strdup("用户不存在");
+        } else if (auth.error == "BAD_PASSWORD") {
+            resp.ptr = strdup("密码错误");
+        } else if (auth.error == "ROLE_MISMATCH") {
+            resp.ptr = strdup("角色不匹配");
+        } else {
+            resp.ptr = strdup("账号/密码/角色不匹配");
+        }
         resp.len = strlen(resp.ptr);
     }
     writetofd(connfd, resp);
@@ -464,6 +476,63 @@ else if (msgtype == AUTH_B) {  // 处理登录请求
                 {
                     printf("AUTH data format error\n");
                 }
+            }
+            else if (msgtype == GET_PENDING_USERS || msgtype == APPROVE_USER || msgtype == REJECT_USER)
+            {
+                // 读取数据体与尾标志（使用std::string，避免Qt依赖）
+                std::string payload;
+                if (datasize > 0) {
+                    payload.resize(datasize);
+                    Readn(connfd, &payload[0], datasize);
+                }
+                char tail;
+                Readn(connfd, &tail, 1);
+
+                MSG resp; memset(&resp, 0, sizeof(resp));
+                if (msgtype == GET_PENDING_USERS) {
+                    // 构造JSON数组响应（仅展示非管理员，且建议只取待审核）
+                    std::vector<UserInfo> users = getAllUsers(); // 如需仅待审核可改为 getPendingUser()
+                    std::string json = "[";
+                    bool first = true;
+                    for (size_t i = 0; i < users.size(); ++i) {
+                        const UserInfo &u = users[i];
+                        // 跳过管理员账号
+                        if (u.role == "admin") continue;
+                        char buf[1024];
+                        snprintf(buf, sizeof(buf),
+                                 "{\"userId\":%d,\"username\":\"%s\",\"email\":\"%s\",\"company\":\"%s\",\"requestedRole\":\"%s\",\"status\":\"%s\",\"reviewedBy\":0}",
+                                 u.id,
+                                 u.username.c_str(), u.email.c_str(), u.company.c_str(), u.role.c_str(), u.status.c_str());
+                        if (!first) json += ",";
+                        json += buf;
+                        first = false;
+                    }
+                    json += "]";
+                    resp.msgType = GET_PENDING_USERS_RESPONSE;
+                    resp.ptr = strdup(json.c_str());
+                    resp.len = (int)strlen(resp.ptr);
+                } else if (msgtype == APPROVE_USER || msgtype == REJECT_USER) {
+                    // 精简：仅解析 userId，不再解析 adminId/不再记录 reviewed_by
+                    int uid = -1;
+                    if (datasize > 0) {
+                        const std::string &s = payload;
+                        size_t p1 = s.find("userId");
+                        if (p1 != std::string::npos) {
+                            size_t c = s.find_first_of("0123456789", p1);
+                            if (c != std::string::npos) uid = atoi(s.c_str() + c);
+                        }
+                    }
+                    bool ok = false;
+                    if (uid > 0) {
+                        if (msgtype == APPROVE_USER) ok = approveUser(uid, -1);
+                        else ok = rejectUser(uid, -1);
+                    }
+                    std::string json = ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"UPDATE_FAILED\"}";
+                    resp.msgType = (msgtype == APPROVE_USER) ? APPROVE_USER_RESPONSE : REJECT_USER_RESPONSE;
+                    resp.ptr = strdup(json.c_str());
+                    resp.len = (int)strlen(resp.ptr);
+                }
+                writetofd(connfd, resp);
             }
             else
             {

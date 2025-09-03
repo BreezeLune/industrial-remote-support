@@ -403,7 +403,7 @@ AuthResult authenticateUser(const std::string& username, const std::string& pass
             return result;
         }
 
-        const char* query = "SELECT id, role, password FROM users WHERE username = ? LIMIT 1";
+        const char* query = "SELECT id, role, password, status FROM users WHERE username = ? LIMIT 1";
         if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
             result.error = "DB_ERROR";
             mysql_stmt_close(stmt);
@@ -433,22 +433,27 @@ AuthResult authenticateUser(const std::string& username, const std::string& pass
 
         // Bind result
         int userId = -1;
-        char role[32] = {0};
+        char roleBuf[32] = {0};
         char dbPassword[128] = {0};
-        unsigned long roleLen = 0, pwdLen = 0;
+        char status[32] = {0};
+        unsigned long roleLen = 0, pwdLen = 0, statusLen = 0;
 
-        MYSQL_BIND resultBind[3];
+        MYSQL_BIND resultBind[4];
         memset(resultBind, 0, sizeof(resultBind));
         resultBind[0].buffer_type = MYSQL_TYPE_LONG;
         resultBind[0].buffer = (char*)&userId;
         resultBind[1].buffer_type = MYSQL_TYPE_STRING;
-        resultBind[1].buffer = (char*)role;
-        resultBind[1].buffer_length = sizeof(role);
+        resultBind[1].buffer = (char*)roleBuf;
+        resultBind[1].buffer_length = sizeof(roleBuf);
         resultBind[1].length = &roleLen;
         resultBind[2].buffer_type = MYSQL_TYPE_STRING;
         resultBind[2].buffer = (char*)dbPassword;
         resultBind[2].buffer_length = sizeof(dbPassword);
         resultBind[2].length = &pwdLen;
+        resultBind[3].buffer_type = MYSQL_TYPE_STRING;
+        resultBind[3].buffer = (char*)status;
+        resultBind[3].buffer_length = sizeof(status);
+        resultBind[3].length = &statusLen;
 
         if (mysql_stmt_bind_result(stmt, resultBind) != 0) {
             result.error = "DB_ERROR";
@@ -490,8 +495,19 @@ AuthResult authenticateUser(const std::string& username, const std::string& pass
             return result;
         }
 
-        if (role != std::string(role, roleLen)) {
+        // Check role match
+        if (role != std::string(roleBuf, roleLen)) {
             result.error = "ROLE_MISMATCH";
+            mysql_stmt_free_result(stmt);
+            mysql_stmt_close(stmt);
+            mysql_close(conn);
+            return result;
+        }
+
+        // Block login if status is rejected (but allow pending/approved per需求)
+        std::string statusStr(status, statusLen);
+        if (statusStr == "rejected") {
+            result.error = "USER_REJECTED";
             mysql_stmt_free_result(stmt);
             mysql_stmt_close(stmt);
             mysql_close(conn);
@@ -501,7 +517,7 @@ AuthResult authenticateUser(const std::string& username, const std::string& pass
         // Success: generate token and store in DB
         result.ok = true;
         result.userId = userId;
-        result.role = std::string(role, roleLen);
+        result.role = std::string(roleBuf, roleLen);
 
         std::string token = generateToken();
         result.token = token;
@@ -591,7 +607,7 @@ std::vector<UserInfo> getAllUsers() {
         mysql_close(conn);
         return users;
     }
-    const char* query = "SELECT id, username, email, company, role, status FROM users";
+    const char* query = "SELECT id, username, email, company, role, status, IFNULL(reviewed_by,0) FROM users";
     MYSQL_RES* res = nullptr;
     MYSQL_ROW row;
     if (mysql_query(conn, query) == 0) {
@@ -604,6 +620,7 @@ std::vector<UserInfo> getAllUsers() {
             info.company = row[3] ? row[3] : "";
             info.role = row[4] ? row[4] : "";
             info.status = row[5] ? row[5] : "";
+            info.reviewedBy = row[6] ? atoi(row[6]) : 0;
             users.push_back(info);
         }
         mysql_free_result(res);
@@ -626,7 +643,7 @@ bool approveUser(int userId, int adminId) {
 
     try {
         // 3. 构造 SQL 语句，更新用户状态为 approved，并记录操作管理员
-        const char* query = "UPDATE users SET status = 'approved', reviewed_by = ? WHERE id = ?";
+        const char* query = "UPDATE users SET status = 'approved', reviewed_by = ? WHERE id = ? AND status = 'pending'";
         MYSQL_STMT* stmt = mysql_stmt_init(conn); // 创建预处理语句对象
         if (!stmt) {
             mysql_close(conn);
@@ -659,10 +676,12 @@ bool approveUser(int userId, int adminId) {
             mysql_close(conn);
             return false;
         }
+        // 确认受影响行数
+        my_ulonglong affected = mysql_stmt_affected_rows(stmt);
         // 7. 清理资源
         mysql_stmt_close(stmt);
         mysql_close(conn);
-        return true; // 操作成功
+        return affected > 0; // 仅当从pending变更时返回true
     }
     catch (...) {
         mysql_close(conn); // 异常时释放资源
@@ -684,7 +703,7 @@ bool rejectUser(int userId, int adminId) {
 
     try {
         // 3. 构造 SQL 语句，更新用户状态为 rejected，并记录操作管理员
-        const char* query = "UPDATE users SET status = 'rejected', reviewed_by = ? WHERE id = ?";
+        const char* query = "UPDATE users SET status = 'rejected', reviewed_by = ? WHERE id = ? AND status = 'pending'";
         MYSQL_STMT* stmt = mysql_stmt_init(conn); // 创建预处理语句对象
         if (!stmt) {
             mysql_close(conn);
@@ -717,10 +736,11 @@ bool rejectUser(int userId, int adminId) {
             mysql_close(conn);
             return false;
         }
+        my_ulonglong affected = mysql_stmt_affected_rows(stmt);
         // 7. 清理资源
         mysql_stmt_close(stmt);
         mysql_close(conn);
-        return true; // 操作成功
+        return affected > 0; // 仅当从pending变更时返回true
     }
     catch (...) {
         mysql_close(conn); // 异常时释放资源
