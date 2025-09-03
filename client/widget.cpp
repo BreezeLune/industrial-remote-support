@@ -20,6 +20,7 @@
 #include <QStringListModel>
 #include <QSound>
 #include <winsock2.h>
+#include "deviceshower.h"
 QRect  Widget::pos = QRect(-1, -1, -1, -1);
 
 extern LogQueue *logqueue;
@@ -148,6 +149,7 @@ Widget::Widget(QWidget *parent)
 
     ui->tabWidget->setCurrentIndex(1);
     ui->tabWidget->setCurrentIndex(0);
+    if (ui->deviceMonitorBtn) ui->deviceMonitorBtn->setEnabled(false);
 }
 
 
@@ -180,6 +182,22 @@ void Widget::cameraImageCapture(QVideoFrame frame)
         //qDebug()<< "format: " <<  videoImg.format() << "size: " << videoImg.size() << "byteSIze: "<< videoImg.sizeInBytes();
     }
     frame.unmap();
+}
+
+void Widget::on_deviceMonitorBtn_clicked()
+{
+    if (!m_deviceShower)
+    {
+        m_deviceShower = new DeviceShower(nullptr); // 顶级窗口
+        m_deviceShower->setWindowFlag(Qt::Window, true);
+        m_deviceShower->setWindowTitle("Sensor Monitor");
+        m_deviceShower->setFixedSize(680, 480);
+        m_deviceShower->setAttribute(Qt::WA_DeleteOnClose, true);
+        connect(m_deviceShower, &QObject::destroyed, this, [this]() { m_deviceShower = nullptr; });
+    }
+    m_deviceShower->show();
+    m_deviceShower->raise();
+    m_deviceShower->activateWindow();
 }
 
 Widget::~Widget()
@@ -481,6 +499,7 @@ void Widget::datasolve(MESG *msg)
             mainip = _mytcpSocket->getlocalip();
            ui->groupBox_2->setTitle(QString("主屏幕(房间号: %1) - %2").arg(roomno).arg(QHostAddress(mainip).toString()));
             ui->mainshow_label->setPixmap(QPixmap::fromImage(QImage(":/myImage/1.jpg").scaled(ui->mainshow_label->size())));
+            if (ui->deviceMonitorBtn) ui->deviceMonitorBtn->setEnabled(true);
         }
         else
         {
@@ -530,6 +549,7 @@ void Widget::datasolve(MESG *msg)
             ui->exitmeetBtn->setDisabled(false);
             ui->createmeetBtn->setDisabled(true);
             _joinmeet = true;
+            if (ui->deviceMonitorBtn) ui->deviceMonitorBtn->setEnabled(true);
         }
     }
     else if(msg->msg_type == IMG_RECV)
@@ -642,6 +662,7 @@ void Widget::datasolve(MESG *msg)
         iplist.clear();
         ui->plainTextEdit->setCompleter(iplist);
         if(_createmeet || _joinmeet) QMessageBox::warning(this, "Meeting Information", "会议结束" , QMessageBox::Yes, QMessageBox::Yes);
+        if (ui->deviceMonitorBtn) ui->deviceMonitorBtn->setEnabled(false);
     }
     else if(msg->msg_type == OtherNetError)
     {
@@ -783,6 +804,7 @@ void Widget::clearPartner()
     }
     ui->openVedio->setText(QString(OPENVIDEO).toUtf8());
     ui->openVedio->setDisabled(true);
+    if (ui->deviceMonitorBtn) ui->deviceMonitorBtn->setEnabled(false);
 }
 
 void Widget::recvip(quint32 ip)

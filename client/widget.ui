@@ -280,6 +280,13 @@
           </property>
          </widget>
         </item>
+        <item>
+         <widget class="QPushButton" name="deviceMonitorBtn">
+          <property name="text">
+           <string>设备监控</string>
+          </property>
+         </widget>
+        </item>
        </layout>
       </widget>
      </item>

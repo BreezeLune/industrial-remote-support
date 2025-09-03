@@ -355,3 +355,46 @@
 ..\..\sendtext.cpp:run::35>>>start sending text thread: 0x0000000000004F08
 ..\..\recvsolve.cpp:run::21>>>start solving data thread: 0x0000000000002208
 ..\..\AudioOutput.cpp:run::111>>>start playing audio thread 0x0000000000007998
+..\..\widget.cpp:Widget::42>>>-------------------------Application Start---------------------------
+..\..\widget.cpp:Widget::43>>>main UI thread id: 0x0000000000007C8C
+..\..\sendimg.cpp:run::17>>>start sending picture thread: 0x00000000000041F8
+..\..\sendtext.cpp:run::35>>>start sending text thread: 0x0000000000009524
+..\..\recvsolve.cpp:run::21>>>start solving data thread: 0x00000000000080E4
+..\..\AudioOutput.cpp:run::111>>>start playing audio thread 0x0000000000007B18
+..\..\widget.cpp:on_connServer_clicked::444>>>succeeed connecting to 192.168.87.131:8080
+..\..\widget.cpp:on_createmeetBtn_clicked::271>>>Attempting to create meeting...
+..\..\widget.cpp:on_createmeetBtn_clicked::280>>>create meeting
+..\..\widget.cpp:onReconnected::706>>>Reconnected to server successfully
+..\..\widget.cpp:datasolve::540>>>succeed joining room
+..\..\widget.cpp:onReconnected::706>>>Reconnected to server successfully
+..\..\widget.cpp:datasolve::540>>>succeed joining room
+..\..\widget.cpp:onReconnected::706>>>Reconnected to server successfully
+..\..\widget.cpp:datasolve::540>>>succeed joining room
+..\..\widget.cpp:on_exitmeetBtn_clicked::341>>>exit meeting
+..\..\widget.cpp:Widget::42>>>-------------------------Application Start---------------------------
+..\..\widget.cpp:Widget::43>>>main UI thread id: 0x0000000000004224
+..\..\sendimg.cpp:run::17>>>start sending picture thread: 0x0000000000000DE8
+..\..\sendtext.cpp:run::35>>>start sending text thread: 0x0000000000009B84
+..\..\recvsolve.cpp:run::21>>>start solving data thread: 0x0000000000009FBC
+..\..\AudioOutput.cpp:run::111>>>start playing audio thread 0x0000000000007C54
+..\..\widget.cpp:on_connServer_clicked::444>>>succeeed connecting to 192.168.87.131:8080
+..\..\widget.cpp:on_createmeetBtn_clicked::271>>>Attempting to create meeting...
+..\..\widget.cpp:on_createmeetBtn_clicked::280>>>create meeting
+..\..\widget.cpp:onReconnected::706>>>Reconnected to server successfully
+..\..\widget.cpp:datasolve::540>>>succeed joining room
+..\..\widget.cpp:Widget::42>>>-------------------------Application Start---------------------------
+..\..\widget.cpp:Widget::43>>>main UI thread id: 0x0000000000008BBC
+..\..\sendimg.cpp:run::17>>>start sending picture thread: 0x00000000000073CC
+..\..\sendtext.cpp:run::35>>>start sending text thread: 0x0000000000001FE0
+..\..\recvsolve.cpp:run::21>>>start solving data thread: 0x0000000000008C94
+..\..\AudioOutput.cpp:run::111>>>start playing audio thread 0x0000000000007F18
+..\..\widget.cpp:on_connServer_clicked::446>>>succeeed connecting to 192.168.87.131:8080
+..\..\widget.cpp:on_createmeetBtn_clicked::273>>>Attempting to create meeting...
+..\..\widget.cpp:on_createmeetBtn_clicked::282>>>create meeting
+..\..\widget.cpp:datasolve::496>>>succeed creating room 35
+..\..\widget.cpp:on_openVedio_clicked::368>>>open camera
+..\..\widget.cpp:on_openVedio_clicked::355>>>close camera
+..\..\widget.cpp:onReconnected::708>>>Reconnected to server successfully
+..\..\widget.cpp:onReconnected::708>>>Reconnected to server successfully
+..\..\widget.cpp:datasolve::521>>>meeting not exist
+..\..\widget.cpp:datasolve::521>>>meeting not exist

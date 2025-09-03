@@ -35,6 +35,17 @@ SOURCES += \
     sendtext.cpp \
     widget.cpp \
     adminpanel.cpp
+# 工厂模块（无需改动内部代码）
+INCLUDEPATH += $$PWD/factory
+SOURCES += $$files($$PWD/factory/*.cpp)
+HEADERS += $$files($$PWD/factory/*.h)
+
+# Windows 下排除不兼容的 factory/server.cpp（包含 arpa/inet.h）
+win32:CONFIG += no_server_cpp
+win32:!isEmpty(CONFIG):contains(CONFIG, no_server_cpp) {
+    SOURCES -= $$PWD/factory/server.cpp \
+               $$PWD/factory/socket.cpp
+}
 
 HEADERS += \
     AudioInput.h \
@@ -68,3 +79,4 @@ RESOURCES += \
     resource.qrc
 
 LIBS += -lws2_32
+

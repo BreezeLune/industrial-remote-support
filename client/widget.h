@@ -15,6 +15,7 @@
 #include "AudioOutput.h"
 #include "chatmessage.h"
 #include <QStringListModel>
+class DeviceShower;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class Widget; }
@@ -105,6 +106,8 @@ private slots:
     void handleKickResponse(MESG* msg); // 处理踢人响应
     void handleKickNotify(MESG* msg);  // 处理踢人通知
 
+    void on_deviceMonitorBtn_clicked();
+
 signals:
     void pushImg(QImage);
     void PushText(MSG_TYPE, QString = "");
@@ -115,6 +118,7 @@ private:
     Ui::Widget *ui;
     MyTcpSocket *m_tcpSocket;
     QString m_userRole;
+    DeviceShower* m_deviceShower = nullptr; // 非模态窗口指针
 };
 #endif // WIDGET_H
 
