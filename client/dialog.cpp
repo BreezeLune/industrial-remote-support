@@ -12,7 +12,7 @@ Dialog::Dialog(QWidget *parent) :
     QDialog(parent),
     ui(new Ui::Dialog),
     m_targetWidget(nullptr),
-     m_tcpSocket(nullptr)
+    m_tcpSocket(nullptr)
 
 // m_tcpSocket(new MyTcpSocket(this))
 {
@@ -66,7 +66,9 @@ void Dialog::onLoginClicked()
 {
     QString username = ui->username->text().trimmed();
     QString password = ui->password->text().trimmed();
-    QString role = getSelectedRole();
+    QString role = getSelectedRoleAuth();
+    qDebug() << "Login! Role received:" << role; // 调试输出
+
     if (username.isEmpty() || password.isEmpty() || role.isEmpty()) {
         ui->label_status->setText("请先输入账号密码并选择角色");
         return;
@@ -88,14 +90,19 @@ void Dialog::onLoginClicked()
     }
 
 }
-// 获取选中的角色（注册/登录页通用）
-QString Dialog::getSelectedRole() {
+// 获取选中的角色（注册页）
+QString Dialog::getSelectedRoleAuth() {
 
     if (ui->factory->isChecked()) return "factory";
-    if (ui->factory2->isChecked()) return "factory";
     else if (ui->expert->isChecked()) return "expert";
-    else if (ui->expert2->isChecked()) return "expert";
     else if(ui->admin->isChecked()) return "admin";
+    return ""; // 未选择
+}
+// 获取选中的角色（登录页）
+QString Dialog::getSelectedRoleRegi() {
+
+    if (ui->factory2->isChecked()) return "factory";
+    else if (ui->expert2->isChecked()) return "expert";
     return ""; // 未选择
 }
 
@@ -137,14 +144,14 @@ void Dialog::onRegisterClicked()
         ui->password2->clear();
         ui->confirm->clear();
     }
-    QString role = getSelectedRole();
+    QString role = getSelectedRoleRegi();
 
     // 输入验证
     if (username.isEmpty() || password.isEmpty() || email.isEmpty() || role.isEmpty()) {
         ui->label_status_2->setText("请完善注册信息并选择角色");
         return;
     }
-   // m_tcpSocket->sendRegisterData(username, password, email, role);
+    // m_tcpSocket->sendRegisterData(username, password, email, role);
 
     // 连接服务器并发送注册数据
     QString serverIp = "192.168.90.91";
@@ -206,7 +213,7 @@ void Dialog::onLoginSuccess(const QString &role)
     }
 
     Widget *mainWidget = new Widget();
-   // mainWidget->setTcpSocket(m_tcpSocket);
+    // mainWidget->setTcpSocket(m_tcpSocket);
     mainWidget->setUserRole(role); // 传递角色信息
     mainWidget->show();
     this->close();
@@ -251,8 +258,35 @@ void Dialog::onGoRegisterClicked()
 void Dialog::onRegisterSuccess(const QString &msg) {
     ui->label_status_2->setText(msg);
     ui->label_status_2->setText("注册成功");
+    if(ui->factory2->isChecked()){
+        ui->factory2->setChecked(false);
+        ui->expert2->setChecked(false);
+    }
+    if(ui->expert2->isChecked()){
+        ui->factory2->setChecked(false);
+        ui->expert2->setChecked(false);
+    }
     QMessageBox::information(this, "已提交注册信息", "待管理员审核");
     ui->stackedWidget->setCurrentIndex(0); // 切回登录页
+    if (m_tcpSocket) {
+        // 将MyTcpSocket指针转换为基类QTcpSocket指针
+        QTcpSocket* baseSocket = dynamic_cast<QTcpSocket*>(m_tcpSocket);
+
+        // 断开连接
+        m_tcpSocket->disconnectFromHost();
+
+        // 通过基类指针调用state()和waitForDisconnected()
+        if (baseSocket && baseSocket->state() != QAbstractSocket::UnconnectedState) {
+            baseSocket->waitForDisconnected(); // 等待连接断开
+        }
+        /*
+        // 销毁socket实例
+        delete m_tcpSocket;
+        m_tcpSocket = nullptr;
+        */
+    }
+
+
 }
 // 注册失败处理
 void Dialog::onRegisterFailed(const QString &errorMsg) {
