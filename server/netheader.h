@@ -27,6 +27,10 @@ enum MSG_TYPE
     PARTNER_JOIN = 22,
     JOIN_MEETING_RESPONSE = 23,
     PARTNER_JOIN2 = 24,
+    // 踢人相关（需与客户端一致）
+    KICK_OUT = 25,
+    KICK_OUT_RESPONSE = 26,
+    KICK_OUT_NOTIFY = 27,
     // 管理员审核相关
     GET_PENDING_USERS = 60,
     APPROVE_USER = 61,
@@ -46,7 +50,8 @@ enum MSG_TYPE
 enum RoleType {
     ROLE_UNKNOWN,
     ROLE_FACTORY,
-    ROLE_EXPERT
+    ROLE_EXPERT,
+    ROLE_ADMIN
 };
 enum Image_Format {
     Format_Invalid,

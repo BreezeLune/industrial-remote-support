@@ -312,6 +312,9 @@ void Widget::on_exitmeetBtn_clicked()
 
     ui->createmeetBtn->setDisabled(true);
     ui->exitmeetBtn->setDisabled(true);
+    // 通知服务端释放房间，并清空本地保存的房间号，避免重连自动回旧房
+    emit PushText(EXIT_MEETING);
+    _mytcpSocket->setRoomInfo(0);
     _createmeet = false;
     _joinmeet = false;
     //-----------------------------------------
@@ -319,7 +322,7 @@ void Widget::on_exitmeetBtn_clicked()
     clearPartner();
     // 关闭套接字
 
-    //关闭socket
+    // 关闭socket（原有行为保留）
     _mytcpSocket->disconnectFromHost();
     _mytcpSocket->wait();
 

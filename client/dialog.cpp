@@ -76,7 +76,7 @@ void Dialog::onLoginClicked()
     }
 
     // 连接服务器 (假设服务器IP和端口是固定的，也可以从界面输入)
-    QString serverIp = "192.168.87.131"; // 实际使用时修改为你的服务器IP
+    QString serverIp = "192.168.90.91"; // 实际使用时修改为你的服务器IP
     QString serverPort = "8080";    // 实际使用时修改为你的服务器端口
     //m_tcpSocket->sendLoginData(username, password,role);
     ui->label_status->setText("正在连接服务器...");
@@ -155,7 +155,7 @@ void Dialog::onRegisterClicked()
     // m_tcpSocket->sendRegisterData(username, password, email, role);
 
     // 连接服务器并发送注册数据
-    QString serverIp = "192.168.87.131";
+    QString serverIp = "192.168.90.91";
     QString serverPort = "8080";
     ui->label_status_2->setText("正在连接服务器...");
     if (m_tcpSocket->connectToServer(serverIp, serverPort, QIODevice::ReadWrite)) {

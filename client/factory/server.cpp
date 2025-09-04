@@ -6,7 +6,8 @@
 #include <sys/select.h>
 
 int main() {
-    int server_fd, soc_socket, qt_socket;
+    int server_fd;
+    std::vector<int> client_sockets;
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
@@ -35,35 +36,70 @@ int main() {
 
     std::cout << "Server listening on port 8081...\n";
 
-    // Accept soc.cpp client first
-    soc_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-    if (soc_socket < 0) {
-        perror("accept failed");
-        exit(EXIT_FAILURE);
+    // Accept clients dynamically, start when at least 2 are connected
+    int max_clients = 3;
+    while (client_sockets.size() < 2) {
+        int new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+        if (new_socket < 0) {
+            perror("accept failed");
+            exit(EXIT_FAILURE);
+        }
+        client_sockets.push_back(new_socket);
+        std::cout << "Client " << client_sockets.size() << " connected!\n";
     }
-    std::cout << "soc.cpp connected!\n";
-
-    // Accept Qt client next
-    qt_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-    if (qt_socket < 0) {
-        perror("accept failed");
-        exit(EXIT_FAILURE);
-    }
-    std::cout << "Qt client connected!\n";
 
     char buffer[1024];
+    fd_set readfds;
     while (true) {
-        int valread = read(soc_socket, buffer, sizeof(buffer)-1);
-        if (valread > 0) {
-            buffer[valread] = '\0';
-            std::cout << "Received from soc.cpp: " << buffer;
-            // Forward to Qt client
-            send(qt_socket, buffer, strlen(buffer), 0);
+        // Si aún no hay 3 clientes, aceptar más
+        if (client_sockets.size() < max_clients) {
+            struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 100000; // 0.1 segundos
+            FD_ZERO(&readfds);
+            FD_SET(server_fd, &readfds);
+            int activity = select(server_fd + 1, &readfds, NULL, NULL, &tv);
+            if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
+                int new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+                if (new_socket >= 0) {
+                    client_sockets.push_back(new_socket);
+                    std::cout << "Client " << client_sockets.size() << " connected!\n";
+                }
+            }
+        }
+        // Manejar mensajes de los clientes
+        FD_ZERO(&readfds);
+        int max_sd = 0;
+        for (int sock : client_sockets) {
+            FD_SET(sock, &readfds);
+            if (sock > max_sd) max_sd = sock;
+        }
+        int activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
+        if (activity < 0) {
+            perror("select error");
+            break;
+        }
+        for (size_t i = 0; i < client_sockets.size(); ++i) {
+            int sock = client_sockets[i];
+            if (FD_ISSET(sock, &readfds)) {
+                int valread = read(sock, buffer, sizeof(buffer)-1);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    std::cout << "Received from client " << (i+1) << ": " << buffer;
+                    // Forward to other clients
+                    for (size_t j = 0; j < client_sockets.size(); ++j) {
+                        if (j != i) {
+                            send(client_sockets[j], buffer, strlen(buffer), 0);
+                        }
+                    }
+                }
+            }
         }
     }
 
-    close(soc_socket);
-    close(qt_socket);
+    for (int sock : client_sockets) {
+        close(sock);
+    }
     close(server_fd);
     return 0;
 }

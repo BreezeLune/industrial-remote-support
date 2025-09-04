@@ -204,6 +204,64 @@ void process_main(int i, int fd) { // room start
                     }
                     if (--nsel <= 0) break;
                     continue; // 心跳包处理完毕
+                } else if (msgtype == KICK_OUT) {
+                    // 1. 读取被踢成员的IP（网络序）并尾部 '#'
+                    uint32_t kick_ip;
+                    char tail;
+                    if (Readn(cfd, &kick_ip, 4) != 4 || Readn(cfd, &tail, 1) != 1 || tail != '#') {
+                        printf("[ROOM ERR] KICK_OUT format error\n");
+                        continue;
+                    }
+
+                    // 2. 验证操作者是否为房主
+                    if (cfd != user_pool->owner) {
+                        MSG resp; memset(&resp, 0, sizeof(MSG));
+                        resp.msgType = KICK_OUT_RESPONSE; resp.targetfd = cfd;
+                        uint32_t status = 0; // 0=失败
+                        resp.ptr = (char*)malloc(sizeof(status));
+                        memcpy(resp.ptr, &status, sizeof(status));
+                        resp.len = sizeof(status);
+                        sendqueue.push_msg(resp);
+                        continue;
+                    }
+
+                    // 3. 查找目标IP对应的fd
+                    int kick_fd = -1;
+                    Pthread_mutex_lock(&user_pool->lock);
+                    for (const auto& pair : user_pool->fdToIp) {
+                        if (pair.second == kick_ip) { kick_fd = pair.first; break; }
+                    }
+                    Pthread_mutex_unlock(&user_pool->lock);
+
+                    // 4. 广播通知
+                    if (kick_fd != -1) {
+                        for (int i = 0; i <= maxfd; i++) {
+                            Pthread_mutex_lock(&user_pool->lock);
+                            bool alive = (user_pool->status[i] == ON);
+                            Pthread_mutex_unlock(&user_pool->lock);
+                            if (!alive) continue;
+                            MSG notify; memset(&notify, 0, sizeof(MSG));
+                            notify.msgType = KICK_OUT_NOTIFY; notify.targetfd = i;
+                            notify.ptr = (char*)malloc(sizeof(kick_ip));
+                            memcpy(notify.ptr, &kick_ip, sizeof(kick_ip));
+                            notify.len = sizeof(kick_ip);
+                            sendqueue.push_msg(notify);
+                        }
+                        // 可选：直接关闭被踢者连接
+                        // fdclose(kick_fd, fd);
+                    }
+
+                    // 5. 返回响应
+                    {
+                        MSG resp; memset(&resp, 0, sizeof(MSG));
+                        resp.msgType = KICK_OUT_RESPONSE; resp.targetfd = cfd;
+                        uint32_t status = (kick_fd == -1) ? 0 : 1;
+                        resp.ptr = (char*)malloc(sizeof(status));
+                        memcpy(resp.ptr, &status, sizeof(status));
+                        resp.len = sizeof(status);
+                        sendqueue.push_msg(resp);
+                    }
+                    continue;
                 }
 
                 // 解析来源 ip（网络序）
@@ -261,7 +319,7 @@ void process_main(int i, int fd) { // room start
                         {
                             // 处理心跳包
                             char tail;
-                            Readn(i, &tail, 1);
+                            Readn(cfd, &tail, 1);
                             if(tail == '#' && msg.len == 0)
                             {
                                 // 构造并发送心跳确认包
@@ -270,7 +328,7 @@ void process_main(int i, int fd) { // room start
                                 heartBeatAck.msgType = HEARTBEAT_ACK;
                                 heartBeatAck.len = 0;
                                 heartBeatAck.ptr = NULL;
-                                heartBeatAck.targetfd = i;
+                                heartBeatAck.targetfd = cfd;
                                 
                                 // 直接发送心跳确认，不经过sendqueue
                                 char *buf = (char *) malloc(100);
@@ -296,13 +354,13 @@ void process_main(int i, int fd) { // room start
                                 
                                 buf[bytestowrite++] = '#';
                                 
-                                if(writen(i, buf, bytestowrite) < bytestowrite)
+                                if(writen(cfd, buf, bytestowrite) < bytestowrite)
                                 {
                                     printf("Heartbeat ACK write fail\n");
                                 }
                                 else
                                 {
-                                    printf("Room process: Sent HEARTBEAT_ACK to client fd %d\n", i);
+                                    printf("Room process: Sent HEARTBEAT_ACK to client fd %d\n", cfd);
                                 }
                                 
                                 free(buf);
@@ -316,19 +374,15 @@ void process_main(int i, int fd) { // room start
                         {
                             // 处理认证消息
                             char tail;
-                            // 【重要修正 2】: 使用 cfd 而不是 i
-                    if (Readn(cfd, &tail, 1) > 0 && tail == '#' && body_len == 0) {
-                        printf("[ROOM INFO] Received AUTH from fd %d.\n", cfd);
-                        // 可以发送一个ACK
-                        MSG ack_msg;
-                        memset(&ack_msg, 0, sizeof(MSG));
-                        ack_msg.msgType = HEARTBEAT_ACK; // 复用心跳ACK
-                        ack_msg.targetfd = cfd;
-                        sendqueue.push_msg(ack_msg);
-                    } else {
-                         printf("[ROOM ERR] fd=%d AUTH format error. Closing.\n", cfd);
-                         fdclose(cfd, fd);
-                    }
+                            if (Readn(cfd, &tail, 1) > 0 && tail == '#' && body_len == 0) {
+                                MSG ack_msg; memset(&ack_msg, 0, sizeof(MSG));
+                                ack_msg.msgType = HEARTBEAT_ACK; // 复用心跳ACK
+                                ack_msg.targetfd = cfd;
+                                sendqueue.push_msg(ack_msg);
+                            } else {
+                                printf("[ROOM ERR] fd=%d AUTH format error. Closing.\n", cfd);
+                                fdclose(cfd, fd);
+                            }
                         }
                 else {
                     printf("[ROOM WARN] fd=%d sent unsupported msg type %d. Draining %u bytes.\n", cfd, msgtype, body_len);
@@ -576,6 +630,20 @@ static void *send_func(void *arg) {
                     if (writen(i, sendbuf, len) < 0) {
                         err_msg("writen error");
                     }
+                }
+            }
+        } else if (msg.msgType == KICK_OUT_RESPONSE) {
+            // 单播给发起者
+            if (user_pool->status[msg.targetfd] == ON) {
+                if (writen(msg.targetfd, sendbuf, len) < 0) {
+                    err_msg("writen error for KICK_OUT_RESPONSE");
+                }
+            }
+        } else if (msg.msgType == KICK_OUT_NOTIFY) {
+            // 这里我们将 targetfd 视为要下发的具体客户端
+            if (user_pool->status[msg.targetfd] == ON) {
+                if (writen(msg.targetfd, sendbuf, len) < 0) {
+                    err_msg("writen error for KICK_OUT_NOTIFY");
                 }
             }
         }
